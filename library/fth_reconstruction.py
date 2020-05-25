@@ -291,9 +291,9 @@ def save_hdf(image_numbers, center_coordinates, bs_size, prop_dist, phase_shift,
     if topo is None:
         topo = [np.nan, np.nan]
     #create the data frame
-    df = pd.DataFrame({'Image Number pos': image_numbers[0], 'Image Number neg': image_numbers[1], 'Topo Number pos': topo[0], 'Topo Number pos': topo[1], 'Center x': center_coordinates[0],
-                       'Center y': center_coordinates[1], 'beamstop diameter': bs_size, 'propagation dist.': prop_dist, 'Phase': phase_shift, 'ROI x1': roi_coordinates[0],
-                       'ROI x2': roi_coordinates[1], 'ROI y1': roi_coordinates[2], 'ROI y2': roi_coordinates[3]})
+    df = pd.DataFrame([{'Image Number pos': [image_numbers[0]], 'Image Number neg': [image_numbers[1]], 'Topo Number pos': [topo[0]], 'Topo Number pos': [topo[1]],
+                       'Center x': [center_coordinates[0]], 'Center y': [center_coordinates[1]], 'beamstop diameter': [bs_size], 'propagation dist.': [prop_dist], 'Phase': [phase_shift],
+                       'ROI x1': [roi_coordinates[0]], 'ROI x2': [roi_coordinates[1]], 'ROI y1': [roi_coordinates[2]], 'ROI y2': [roi_coordinates[3]]}], index = [0])
     #write the file
     print('Save HDF file ' + filename)
     df.to_hdf(filename, key)
