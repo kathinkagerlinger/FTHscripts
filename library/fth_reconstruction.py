@@ -10,6 +10,8 @@ from scipy.ndimage.filters import gaussian_filter
 import configparser as cp
 import matplotlib.pyplot as plt
 import pandas as pd
+import h5py
+
 #reading matlap files
 import scipy.io as sio
 import scipy.constants as cst
@@ -96,6 +98,7 @@ def load_mat(folder, npos):
     bs_diam = np.max(np.append(np.sum(beamstop, axis=1), np.sum(beamstop, axis=0)))
     print('Loaded matlab file ' + folder + 'holo_%04d.mat'%npos)
     return (center, bs_diam)
+
 
 ###########################################################################################
 
@@ -279,25 +282,29 @@ def global_phase_shift(holo, phi):
 
 ###########################################################################################
 
-def save_hdf(image_numbers, center_coordinates, bs_size, prop_dist, phase_shift, roi_coordinates, filename, key, topo = None):
-    '''save the reconstruction parameters in a hdf file
-    PARAMETERS:
-        image_numbers is a 1D list with either two values: [pos, neg], in case of single helicity, one of these images should be NaN
-        center_coordinates is a 1D array with two values: [xcenter, ycenter]
-        roi_coordinates is a 1D array with four calues: [xstart, xstop, ystart, ystop]
-        bs_size is a float indicating the diameter of the beamstop
-        prop_dist is a float indicating the propagation length
-        filename is the name and path under which the configfile should be saved'''
-    if topo is None:
-        topo = [np.nan, np.nan]
-    #create the data frame
-    df = pd.DataFrame([{'Image Number pos': [image_numbers[0]], 'Image Number neg': [image_numbers[1]], 'Topo Number pos': [topo[0]], 'Topo Number pos': [topo[1]],
-                       'Center x': [center_coordinates[0]], 'Center y': [center_coordinates[1]], 'beamstop diameter': [bs_size], 'propagation dist.': [prop_dist], 'Phase': [phase_shift],
-                       'ROI x1': [roi_coordinates[0]], 'ROI x2': [roi_coordinates[1]], 'ROI y1': [roi_coordinates[2]], 'ROI y2': [roi_coordinates[3]]}], index = [0])
-    #write the file
-    print('Save HDF file ' + filename)
-    df.to_hdf(filename, key)
-    return
+def save_reco_dict_to_hdf(fname, reco_dict):
+    '''Saves a flat dictionary to a new hdf group in given file.
+    
+    Parameters
+    ----------
+    fname : str
+        hdf file name
+    reco_dict : dict
+        Flat dictionary
+    
+    Returns
+    -------
+    grp : str
+        Name of the new data group.
+    '''
+    with h5py.File(fname, mode='a') as f:
+        i = 0
+        while f'reco{i:02d}' in f:
+            i += 1
+        for k, v in reco_dict.items():
+            f[f'reco{i:02d}/{k}'] = v
+    return f'reco{i:02d}'
+    
 
 def save_config(image_numbers, center_coordinates, bs_size, prop_dist, phase_shift, roi_coordinates, conf_filename):
     '''save the reconstruction parameters in a config file with configparser
@@ -369,22 +376,23 @@ def save_config_matlab(image_numbers, center_coordinates,  prop_dist, phase_shif
         config.write(configfile)
     return
 
-def read_hdf(filename, key):
-    '''read data from hdf file 
-    filename is the name and path under which the hdf is saved, key is the key or which part of the file you want to get'''
-    df = pd.read_hdf(filename, key)
+def read_hdf(fname):
+    f = h5py.File(fname, 'r')
+    i = 0
+    while f'reco{i:02d}' in f:
+        i += 1
+    i -= 1
     
-    if np.isnan(df['Image Number pos']):
-        image_numbers = np.array([np.nan, int(df['Image Number neg'])])
-    elif np.isnan(df['Image Number neg']):
-        image_numbers = np.array([int(df['Image Number pos']), np.nan])
-    else:
-        image_numbers = np.array([int(df['Image Number pos']), int(df['Image Number neg'])])
-    
-    center = np.array([int(df['Center x']), int(df['Center y'])])
-    roi = np.array([int(df['ROI x1']), int(df['ROI x2']), int(df['ROI y1']), int(df['ROI y2'])])
-    
-    return (image_numbers, center, int(df['beamstop diameter']), int(df['propagation dist.']), int(df['Phase']), roi)
+    image_numbers = f[f'reco{i:02d}/image numbers'].value
+    topo_numbers = f[f'reco{i:02d}/topo numbers'].value 
+    factor = f[f'reco{i:02d}/factor'].value
+    center = f[f'reco{i:02d}/center'].value
+    bs_diam = f[f'reco{i:02d}/beamstop diameter'].value
+    prop_dist = f[f'reco{i:02d}/Propagation distance'].value
+    phase = f[f'reco{i:02d}/phase'].value
+    roi = f[f'reco{i:02d}/ROI coordinates'].value
+
+    return (image_numbers, topo_numbers, factor, center, bs_diam, prop_dist, phase, roi)
 
 
 def read_config(conf_filename):
