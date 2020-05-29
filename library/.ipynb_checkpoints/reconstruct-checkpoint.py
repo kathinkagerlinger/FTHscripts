@@ -30,12 +30,17 @@ import cameras as cam
 
 def allNew(image_folder, image_numbers, folder_matlab, matlab_number = None, size=[2052,2046], auto_factor = True, spe_prefix = None):
     '''
-    opens the image files in image_numbers (first element is POSITIVE HEL, second is NEGATIVE HEL)
-    if a spe_prefix is given, it opens spe files, otherwise it opens greateyes files.
-    opens the matlab file for the center and beamstop
-
-    shifts the center and masks the beamstop
-    returns the shifted and masked hologram, the center and the beamstop
+    This function reconstructs a hologram using values in a matlab file. This function is currently not used in the reconstruction files.
+    INPUT:  image_folder: folder where the raw data is stored
+            image_numbers: list or array of the images [positive helicity image, negative helicity image]
+            folder_matlab: folder where the matlab parameter files are saved
+            matlab_number: number of the matlab file, default is None (takes positive helicity image number)
+            size: size of the hologram in pixels, default is the pixel dimensions of our greateyes camera.
+            auto_factor:  determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5, default is TRUE
+            spe_prefix: default is NONE in which case it opens greateyes files, otherwise, it opens spe files with the given prefix
+    OUTPUT: difference hologram that is centered and multiplied with the beamstop mask, center coordinates, beamstop diameter and factor as a tuple
+    -------
+    author: KG 2019
     '''
     if spe_prefix is None:
         pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers[0], size=size)
@@ -60,8 +65,10 @@ def allNew(image_folder, image_numbers, folder_matlab, matlab_number = None, siz
 
 def change_beamstop(bs_diameter):
     '''
-    Change the beamstop diameter with an input field.
+    Change the beamstop diameter with a jupyter widget input field.
     Returns the input field. When you are finished, you can save the positions of the field.
+    -------
+    author: KG 2019
     '''
     style = {'description_width': 'initial'}
 
@@ -76,6 +83,8 @@ def set_beamstop(holo, bs_diameter, sigma = 10):
     '''
     Input center-shifted hologram and the diameter of the beamstop. You may change the sigma of the gauss filter (default is 10).
     Returns the hologram where the beamstop is masked.
+    -------
+    author: KG 2019
     '''
     print("Masking beamstop with a diameter of %i pixels."%bs_diameter)
     holoB = fth.mask_beamstop(holo, bs_diameter, sigma=sigma)
@@ -84,9 +93,11 @@ def set_beamstop(holo, bs_diameter, sigma = 10):
 
 def set_roi(holo, scale = (1,99)):
     """ 
-    Select a ROI somewhat interactively
+    Select a ROI somewhat interactively, not used anymore!
     Input the shfited and masked hologram as returned from recon_allNew.
     Returns the four input fields. When you are finished, you can save the positions of the fields.
+    -------
+    author: KG 2019
     """
     recon=fth.reconstruct(holo)
     
@@ -108,17 +119,14 @@ def set_roi(holo, scale = (1,99)):
     return (ROIx1, ROIx2, ROIy1, ROIy2, button)
 
 
-def plot_ROI(holo, ROI_coord):
-    fig, ax = plt.subplots()
-    ax = plt.imshow(np.real(fth.reconstruct(holo)[ROI_coord[2]:ROI_coord[3], ROI_coord[0]:ROI_coord[1]]), cmap='gray')
-    return
-
-
 def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100)):
     '''
     starts the quest for the right propagation distance and global phase shift.
-    Input the shfited and masked hologram as returned from recon_allNew as well as the determined coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+    Input:  the shifted and masked hologram as returned from recon_allNew
+            coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
     Returns the two sliders. When you are finished, you can save the positions of the sliders.
+    -------
+    author: KG 2019
     '''
     style = {'description_width': 'initial'}
     fig, axs = plt.subplots(1,2)
@@ -161,22 +169,32 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100)):
 
 ###########################################################################################
 
-#                              RECONSTRUCT WITH CONFIG FILE                               #
+#                      RECONSTRUCT WITH PREVIOUS PARAMETERS                               #
 
 ###########################################################################################
 
 def fromParameters(image_folder, image_numbers, fname_param, new_bs=False, old_prop=True, topo_nr=None, helpos=None, auto_factor=False, size=[2052,2046], spe_prefix=None):
     '''
-    opens the image files in image_numbers (either single helicity or double helicity)
-    if a spe_prefix is given, it opens spe files, otherwise it opens greateyes files.
-    opens the config file for the center, beamstop, the ROI and the propagation etc.
-
-    shifts the center and masks the beamstop
-    returns the reconstruction parameters as well as the hologram that was corrected as inidcated (with and without bs mask, propagation)
+    This function reconstructs a hologram using the latest parameters of the given hdf file.
+    INPUT:  image_folder: folder where the raw data is stored
+            image_numbers: list or array of the images [positive helicity image, negative helicity image], single helicity reconstruction: just the image number you want to reconstruct
+            fname_param: path and filename of the hdf file where the parameters are stored.
+            new_bs: boolean variable to indicate if you want to use the stored beamstop (FALSE) or if you want to change it (TRUE), default is FALSE
+            old_prop: boolean variable to indicate if you want to use the stored propagation distance (TRUE) or if you want to change it (FALSE), default is TRUE
+            topo_nr: numbers of the topography for single helicity reconstruction, default is None, then the topography numbers of the hdf file are used if possible
+            helpos: boolean variable to indicate the helicity of the single helicity reconstruction, default is None which indicates a double helicity reconstruction
+            auto_factor:  determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5, default is TRUE
+            size: size of the hologram in pixels, default is the pixel dimensions of our greateyes camera.
+            spe_prefix: default is NONE in which case it opens greateyes files, otherwise, it opens spe files with the given prefix
+            holoN, factor, center, bs_diam, roi, prop_dist, phase
+    OUTPUT: difference hologram that is centered and multiplied with the beamstop mask (if new_bs is FALSE) and propagated (if old_prop is TRUE), factor determined by the function
+            center coordinates, beamstop diameter, ROI coordinates, propagation distance and phase from the hdf file
+    -------
+    author: KG 2020
     '''
 
     #Load the parameters from the hdf file
-    _, _, _, center, bs_diam, prop_dist, phase, roi = fth.read_hdf(fname_param)
+    _, nref, _, center, bs_diam, prop_dist, phase, roi = fth.read_hdf(fname_param)
 
     #Load the images (spe or greateyes; single or double helicity)
     if spe_prefix is None: #greateyes
@@ -245,12 +263,15 @@ def fromParameters(image_folder, image_numbers, fname_param, new_bs=False, old_p
 
 def fromConfig(image_folder, image_numbers, folder_config, number_config, new_bs=False, old_prop=True, topo_nr=None, helpos=None, auto_factor=False, size=[2052,2046], spe_prefix=None):
     '''
+    old function that uses the config file, replaced by funtion FromParameters with hdf file
     opens the image files in image_numbers (either single helicity or double helicity)
     if a spe_prefix is given, it opens spe files, otherwise it opens greateyes files.
     opens the config file for the center, beamstop, the ROI and the propagation etc.
 
     shifts the center and masks the beamstop
     returns the reconstruction parameters as well as the hologram that was corrected as inidcated (with and without bs mask, propagation)
+    -------
+    author: KG 2019
     '''
 
     #Load the config file
@@ -323,8 +344,11 @@ def fromConfig(image_folder, image_numbers, folder_config, number_config, new_bs
 def phase_shift(holo, roi, phase=0):
     '''
     starts the quest for the global phase shift.
-    Input the shfited, masked and propagated hologram as returned from recon_fromConfig as well as the determined coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
-    Returns the slider. When you are finished, you can save the positions of the slider.
+    Input:  the shifted, masked and propagated hologram
+            coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+    Returns the two sliders. When you are finished, you can save the positions of the sliders.
+    -------
+    author: KG 2019
     '''
     fig, axs = plt.subplots(1,2)
     def p(x):
@@ -367,9 +391,20 @@ def phase_shift(holo, roi, phase=0):
 
 def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi, image_numbers, comment = '', topo = None):
     '''
-    reconstruct the shifted and masked hologram (propagation and phase shift are performed here.)
-    save all parameters in numpy-files (holo and beamstop) and a config file (rest)
-    if the folder you put in does not exist, it will be created.
+    Save everything in a hdf file. If the file already exists, append the reconstruction and parameters to that file (key is always reco%increasing number)
+    INPUT:  fname: path and name of the hdf file
+            recon: ROI of the reconstructed hologram
+            factor: factor of the image and the topography
+            center: center coordinates
+            bs_diam: beamstop diameter
+            prop_dist: propagation distance
+            phase: phase
+            roi: ROI coordinates
+            image_numbers: array or list of the reconstructed images, single helicity reconstruction has one of the two image numbers as np.nan
+            comment: string if you want to leave a comment about this reconstruction, default is an empty string
+            topo: image numbers of the topography used as array or list, default is None in which case a list of [np.nan, np.nan] is saved
+    -------
+    author: KG 2020
     '''
     image_numbers = np.array(image_numbers)
     
@@ -402,6 +437,8 @@ def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi
 
 def save_parameters_config(holo, center, prop_dist, phase, roi, folder, image_numbers, bs_diam, propagate=False):
     '''
+    old function to save parameters in a config file and reconstruction as numpy array. Replaced by saving everything in a hdf file with save_parameters()
+    
     reconstruct the shifted and masked hologram (propagation and phase shift are performed here.)
     save all parameters in numpy-files (holo and beamstop) and a config file (rest)
     if the folder you put in does not exist, it will be created.
