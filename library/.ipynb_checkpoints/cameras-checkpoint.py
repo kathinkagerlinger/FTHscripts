@@ -7,7 +7,6 @@ Python Dictionary for loading camera data (greateyes and princeton instruments)
 
 import numpy as np
 import xmltodict as xml2d
-import h5py
 
 
 ##################################
