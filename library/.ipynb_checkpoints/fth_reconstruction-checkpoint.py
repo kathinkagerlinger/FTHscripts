@@ -28,7 +28,7 @@ def load_both(pos, neg, auto_factor=False):
     '''
     Load images for a double helicity reconstruction
     INPUT:  pos, neg: images of positive and negative helicity
-            auto_factor: determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 1
+            auto_factor: determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5
     OUTPUT: difference hologram and factor as a tuple
     --------
     author: KG 2019
@@ -43,7 +43,7 @@ def load_both(pos, neg, auto_factor=False):
         print('Auto factor = ' + str(factor))
     else:
         topo = pos + neg
-        factor = 1
+        factor = 0.5
 
     #make sure to return a quadratic image, otherwise the fft will distort the image
     if size[0]<size[1]:
@@ -196,6 +196,200 @@ def remove_two(holo, x_coord, y_coord):
             print("No cosmic rays removed! Input two pixel!")
     return holo
     
+    
+def eliminateCosmicRays(image,
+                        minDeviationInMultiplesOfSigma = 8, 
+                        cellsize = 64, 
+                        minAbsolutDeviation = 100
+                        ):
+    '''
+    Definition of cosmic rays in several steps:
+
+     1) devide the original image in a complete overlay of 
+        (cellsize)x(cellsize) pixel subimages -> set1
+
+     2) perform a second devision, where the cells are shifted by 
+        (cellsize/2)x(cellsize/2) pixel -> set2,
+        such that the middle of each cell of set2 is a corner of a cell 
+        of set1 and vice versa. Now, every pixel (except for the one of
+        the outer (cellsize/2) pixel shell)
+        are in exactly one cell of set1 and one cell of set2
+
+     3) for each cell of set1 and set2, calculate the average and
+        standard deviation
+
+     4) all pixels exceeding average +- minDev * sigma are potentially
+        cosmic rays
+
+     5) Define a 3rd set, which contains all intersections of cells of 
+        set1 and set2 plus the outer frame of cellsize/2 pixels which are 
+        exclusively in set1.
+        Pixels in this cell will be replaced by the cell's avergae 
+        provided that both parent
+        cells rate this pixel as a cosmic ray.
+
+     6) Repeat the procedure until no pixels are identified as cosmic
+        rays.
+
+     7) minAbsolutDeviation defines how much the hot pixels need to be
+        above of below the average intensity in set1 or set2 in order to
+        be counted as a cosmic ray. Should be set to two photon counts
+        to avoid elimination of data in sections where only very few
+        photons are found.
+        
+        
+    Parameters
+    ---------
+    image : Numpy array of MxN pixels
+        Hologram to be filtered
+    
+    minDeviationInMultiplesOfSigma : float
+        Threshold, in units of standard deviation, to idenify a cosmic ray.
+    
+    cellsize : int
+        Size of tiles in set1. Should be a divisor of each dimension of image.
+    
+    minAbsolutDeviation : float
+        Absolute threshold to identify a cosmic ray.
+    
+    Returns
+    ---------
+    Filtered copy of image.
+    
+    -----
+    author: FB ??, 2016??
+    '''
+    # Don't edit the provided image
+    image = image.copy()
+    n = cellsize
+    minDev = minDeviationInMultiplesOfSigma
+    minAbsDev = minAbsolutDeviation
+  
+    numberOfIdentifiedCosmicRays = 20
+    totalNumberOfIdentifiedCosmicRays = 0
+    numberOfIterations = 0
+  
+    nx,ny = image.shape[:2]
+  
+    while numberOfIdentifiedCosmicRays > 3:
+        avSet1,stdSet1 = average_over_n_nearest_pixels_2D(
+                            image, n, True)
+        avSet2,stdSet2 = average_over_n_nearest_pixels_2D(
+                            image[n/2:-n/2,n/2:-n/2], n, True)
+        # Determine the upper and lower limits beyond which a pixel intensity
+        # defines a hot pixel, individually for each pixel in image.
+        ULSet1 = np.maximum(avSet1 + minDev * stdSet1,
+                            avSet1 + minAbsDev)
+        LLSet1 = np.minimum(avSet1 - minDev * stdSet1,
+                            avSet1 - minAbsDev)
+        ULSet2 = np.maximum(avSet2 + minDev * stdSet2,
+                            avSet2 + minAbsDev)
+        LLSet2 = np.minimum(avSet2 - minDev * stdSet2,
+                            avSet2 - minAbsDev)
+        # Make the UL and LL matrices as large as the original image.
+        # Where set2 does not have own values, values from set1 are used.
+        ULSet1_large = ULSet1.repeat(n,axis=0).repeat(n,axis=1)
+        LLSet1_large = LLSet1.repeat(n,axis=0).repeat(n,axis=1)
+        ULSet2_large = ULSet1_large.copy()
+        LLSet2_large = LLSet1_large.copy()
+        ULSet2_large[n/2:nx-n/2,n/2:ny-n/2] = ULSet2.repeat(n,axis=0).repeat(n,axis=1)
+        LLSet2_large[n/2:nx-n/2,n/2:ny-n/2] = LLSet2.repeat(n,axis=0).repeat(n,axis=1)
+
+        UL = np.maximum(ULSet1_large, ULSet2_large)
+        LL = np.minimum(LLSet1_large, LLSet2_large)
+
+        replace = np.logical_or(image<LL,image>UL)
+        # Replace pixels by the average in set1
+        replaceBy = avSet1.repeat(n,axis=0).repeat(n,axis=1)
+
+        image[replace] = replaceBy[replace]
+        numberOfIdentifiedCosmicRays = replace.sum()
+        totalNumberOfIdentifiedCosmicRays += numberOfIdentifiedCosmicRays
+        numberOfIterations += 1
+        print('Replaced {} ({} in total) cosmic rays in {} iterations'.format(
+              numberOfIdentifiedCosmicRays,
+              totalNumberOfIdentifiedCosmicRays,
+              numberOfIterations))
+    return image
+ 
+
+
+# %%
+def average_over_n_nearest_pixels_2D(M,n,returnStdDev=False):
+    '''
+    Split the numpy array M in local groups of nxn pixels (along the x and
+    y axes). Take the average of each group. Return the result.
+  
+    Parameters
+    ----------
+    M : numpy array of at least 2 dimensions
+        Magnetization pattern
+    n : float > 0
+        If n is not an integer or if the shape of M cannot be divided by n,
+        then the size of the local groups may vary by +-1.
+    returnStdDev : bool
+        If set to True, the standard deviation for each average will be returned
+        as a second parameter.
+  
+    Returns
+    -------
+    An array where the x and y dimensions are by a factor n smaller than
+    in the input array.
+    
+    -----
+    author: FB ??, 2016??
+    '''
+    # To test / visualize the following code, copy and play with this:
+    ## Simulate a matrix with x and y dimensions and a 3-vector in
+    ## each cell
+    #t = np.array(range(420)).reshape((10,14,3))
+    #nx = 2
+    #ny = 7
+    ## Set the x-component of each vector to 1000 to check that is
+    ## does not get mixed with the y and z component in the procedure
+    #t[...,0] = 1000
+    ## Split t in 5x2 submatrices = 10/2 x 14/7
+    #s = np.array(np.array_split(np.array(np.array_split(t,ny,axis=1)),nx,axis=1))
+    ## t[0:5,0:2,...] is obtained from s[0,0]
+    ## t[5:10,0:2,...] is obtained from s[1,0]
+    ## Flatten the submatrices. Calculate the new shape depending on the number
+    ## of dimensions of t
+    #newShape = s.shape
+    #if( len(s.shape) > 4 ):
+    #  newShape = s.shape[0:2] + (-1,) + s.shape[4:]
+    #else:
+    #  newShape = s.shape[0:2] + (-1,)
+    #sf = s.reshape(newShape)
+    ## Compare tsf[1,0] and ts[1,0] to see the effect of the previous commands.
+    ## They work for arbitrary shapes of t.
+    ## Check that tsf[...,0] is still 1000 everywhere.
+    ## Now averages (with stdDev) over the second axis are possible.
+    if(n<1):
+        n=1
+    nx = max(1,int(np.ceil(M.shape[0]/float(n))))
+    ny = max(1,int(np.ceil(M.shape[1]/float(n))))
+    # pad M with NaN values to make the dimensions an integer multiple of nx and ny
+    # NaN values will be ignored in the averaging
+    shape=M.shape
+    newshape = (int(nx*n),int(ny*n))+shape[2:]
+    Mn = np.ones(newshape)*np.NaN
+    Mn[(newshape[0]-shape[0])/2:shape[0]+(newshape[0]-shape[0])/2,
+       (newshape[1]-shape[1])/2:shape[1]+(newshape[1]-shape[1])/2,
+       ...] = M
+    # Subdivide the array Mn in x and y direction.
+    s = np.array(np.array_split(np.array(np.array_split(Mn,ny,axis=1)),nx,axis=1))
+    newShape = s.shape
+    if( len(s.shape) > 4 ):
+        newShape = s.shape[0:2] + (-1,) + s.shape[4:]
+    else:
+        newShape = s.shape[0:2] + (-1,)
+    sf = s.reshape(newShape)
+    # Mask all NaN elements for the averaging
+    sf = np.ma.MaskedArray(sf, mask=np.isnan(sf))
+    # If requested, calculate the standard deviation.
+    if( returnStdDev ):
+        return np.average(sf,axis=2),np.std(sf,axis=2)
+    return np.average(sf,axis=2)
 
 ###########################################################################################
 

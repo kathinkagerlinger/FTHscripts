@@ -173,15 +173,15 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100)):
 
 ###########################################################################################
 
-def fromParameters(image_folder, image_numbers, fname_param, new_bs=False, old_prop=True, topo_nr=None, helpos=None, auto_factor=False, size=[2052,2046], spe_prefix=None):
+def fromParameters(fname_im, entry_nr, fname_param, new_bs=False, old_prop=True, topo_nr=None, helpos=None, auto_factor=False, spe_prefix=None):
     '''
     This function reconstructs a hologram using the latest parameters of the given hdf file.
-    INPUT:  image_folder: folder where the raw data is stored
-            image_numbers: list or array of the images [positive helicity image, negative helicity image], single helicity reconstruction: just the image number you want to reconstruct
+    INPUT:  fname_im: name of the h5 file where the images are stored
+            entry_nr: list or array of the entry numbers [positive helicity image, negative helicity image], single helicity reconstruction: just the entry number you want to reconstruct
             fname_param: path and filename of the hdf file where the parameters are stored.
             new_bs: boolean variable to indicate if you want to use the stored beamstop (FALSE) or if you want to change it (TRUE), default is FALSE
             old_prop: boolean variable to indicate if you want to use the stored propagation distance (TRUE) or if you want to change it (FALSE), default is TRUE
-            topo_nr: numbers of the topography for single helicity reconstruction, default is None, then the topography numbers of the hdf file are used if possible
+            topo_nr: numbers of the topography entries for single helicity reconstruction, default is None, then the topography numbers of the hdf file are used if possible
             helpos: boolean variable to indicate the helicity of the single helicity reconstruction, default is None which indicates a double helicity reconstruction
             auto_factor:  determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5, default is TRUE
             size: size of the hologram in pixels, default is the pixel dimensions of our greateyes camera.
@@ -197,48 +197,26 @@ def fromParameters(image_folder, image_numbers, fname_param, new_bs=False, old_p
     _, nref, _, center, bs_diam, prop_dist, phase, roi = fth.read_hdf(fname_param)
 
     #Load the images (spe or greateyes; single or double helicity)
-    if spe_prefix is None: #greateyes
-        if helpos==None:
-            print("Double Helicity Reconstruction")
-            pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers[0], size=size)
-            neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers[1], size=size)
-            holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
-        else:
-            print("Single Helicity Reconstruction")
-            if topo_nr is None:
-                if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
-                    print("Please put in the numbers for the topography.")
-                    return
-                else:
-                    pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%nref[0], size=size)
-                    neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%nref[1], size=size)
+    if helpos==None:
+        print("Double Helicity Reconstruction")
+        pos = maxi.get_mte(fname_im, entry_nr[0])
+        neg = maxi.get_mte(fname_im, entry_nr[1])
+        holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
+    else:
+        print("Single Helicity Reconstruction")
+        if topo_nr is None:
+            if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
+                print("Please put in the numbers for the topography.")
+                return
             else:
-                pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%topo_nr[0], size=size)
-                neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%topo_nr[1], size=size)
-    
-            image = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers, size=size)
-            holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
-    else: #spe
-        if helpos==None:
-            print("Double Helicity Reconstruction")
-            pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers[0], return_header=False)
-            neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers[1], return_header=False)
-            holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
+                pos = maxi.get_mte(fname_im, nref[0])
+                neg = maxi.get_mte(fname_im, nref[1])
         else:
-            print("Single Helicity Reconstruction")
-            if topo_nr is None:
-                if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
-                    print("Please put in the numbers for the topography.")
-                    return
-                else:
-                    pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%n_ref[0], return_header=False)
-                    neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%n_ref[1], return_header=False)
-            else:
-                pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%topo_nr[0], return_header=False)
-                neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%topo_nr[1], return_header=False)
-    
-            image = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers, return_header=False)
-            holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
+            pos = maxi.get_mte(fname_im, topo_nr[0])
+            neg = maxi.get_mte(fname_im, topo_nr[0])
+
+        image = maxi.get_mte(fname_im, entry_nr)
+        holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
     
     print("Start reconstructing the image using the center and beamstop mask from the Matlab reconstruction.")
     holoN = fth.set_center(holo, center)
