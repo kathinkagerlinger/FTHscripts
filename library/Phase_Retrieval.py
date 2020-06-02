@@ -13,7 +13,7 @@ from skimage.draw import circle
 
 
 #############################################################
-#       PHASE RETRIEVAL FUNCTION
+#       PHASE RETRIEVAL FUNCTIONS
 #############################################################
 
 def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
