@@ -374,3 +374,35 @@ def Error_support(prev,mask):
     Error=Num.sum()/Den.sum()
     Error=10*np.log10(Error)
     return Error
+
+#############################################################
+#    function for setting PR parameters using widgets
+#############################################################
+def widgParam():
+    def f(N_step,algorithm,beta,beta_func,only_real,BeamStop,N_average_images,plot_how_often):
+        global Nit
+        global mode
+        global beta_mode
+        global real_object
+        global plot_every
+        global BS
+        global average
+        global beta_zero
+        if BeamStop==False:
+            BS=[0,0,0]
+        plot_every=plot_how_often
+        mode = algorithm
+        beta_mode=beta_func
+        real_object = only_real
+        average=N_average_images
+        Nit=N_step
+        beta_zero=beta
+        return
+        
+    widgets.interact(f, N_step=widgets.IntSlider(min=0, max=3000, step=5, value=200),
+        algorithm=['ER','RAAR','HIO','CHIO','HIOs','OSS','HPR'],
+         beta=widgets.FloatSlider(value=0.8,min=0.5,max=1.0,step=0.01),
+         beta_func=['const','arctan','exp','linear_to_beta_zero','linear_to_1'],
+         only_real=False, BeamStop=False,
+         N_average_images=widgets.IntSlider(min=1, max=30, step=1, value=10),
+         plot_how_often=widgets.IntSlider(min=5, max=300, step=5, value=50));
