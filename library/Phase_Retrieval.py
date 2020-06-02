@@ -180,7 +180,7 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
             display(plt.gcf())
         
             print('step:',s,'   beta=',beta,'   alpha=',alpha, '    mode=',mode,
-                  '    beta_mode=',beta_mode,'   N_avg=',average)
+                  '    beta_mode=',beta_mode,'   N_avg=',average_img)
 
     #sum best guess images
     guess==np.sum(Best_guess,axis=0)/average_img
