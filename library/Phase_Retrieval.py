@@ -380,9 +380,11 @@ def Error_support(prev,mask):
 #############################################################
 def widgParam(BS):
     def f(N_step,algorithm,beta,beta_func,only_real,BeamStop,N_average_images,plot_how_often):
-        global BS,plot_every,mode,beta_mode,real_object,average,Nit,beta_zero
+        global BS,BS2,plot_every,mode,beta_mode,real_object,average,Nit,beta_zero
         if BeamStop==False:
-            BS=[0,0,0]
+            BS2=[0,0,0]
+        else:
+            BS2=BS
         plot_every=plot_how_often
         mode = algorithm
         beta_mode=beta_func
@@ -390,7 +392,7 @@ def widgParam(BS):
         average=N_average_images
         Nit=N_step
         beta_zero=beta
-        return (Nit,mode,beta_mode,real_object,plot_every,BS,average,beta_zero)
+        return (Nit,mode,beta_mode,real_object,plot_every,BS2,average,beta_zero)
         
     widgets.interact(f, N_step=widgets.IntSlider(min=0, max=3000, step=5, value=200),
         algorithm=['ER','RAAR','HIO','CHIO','HIOs','OSS','HPR'],
@@ -400,4 +402,4 @@ def widgParam(BS):
          N_average_images=widgets.IntSlider(min=1, max=30, step=1, value=10),
          plot_how_often=widgets.IntSlider(min=5, max=300, step=5, value=50));
     
-    return (Nit,mode,beta_mode,real_object,plot_every,BS,average,beta_zero)
+    return (Nit,mode,beta_mode,real_object,plot_every,BS2,average,beta_zero)
