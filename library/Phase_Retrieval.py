@@ -378,16 +378,9 @@ def Error_support(prev,mask):
 #############################################################
 #    function for setting PR parameters using widgets
 #############################################################
-def widgParam():
+def widgParam(BS):
     def f(N_step,algorithm,beta,beta_func,only_real,BeamStop,N_average_images,plot_how_often):
-        global Nit
-        global mode
-        global beta_mode
-        global real_object
-        global plot_every
-        global BS
-        global average
-        global beta_zero
+        global BS,plot_every,mode,beta_mode,real_object,average,Nit,beta_zero
         if BeamStop==False:
             BS=[0,0,0]
         plot_every=plot_how_often
@@ -397,7 +390,7 @@ def widgParam():
         average=N_average_images
         Nit=N_step
         beta_zero=beta
-        return
+        return (Nit,mode,beta_mode,real_object,plot_every,BS,average,beta_zero)
         
     widgets.interact(f, N_step=widgets.IntSlider(min=0, max=3000, step=5, value=200),
         algorithm=['ER','RAAR','HIO','CHIO','HIOs','OSS','HPR'],
@@ -406,3 +399,5 @@ def widgParam():
          only_real=False, BeamStop=False,
          N_average_images=widgets.IntSlider(min=1, max=30, step=1, value=10),
          plot_how_often=widgets.IntSlider(min=5, max=300, step=5, value=50));
+    
+    return (Nit,mode,beta_mode,real_object,plot_every,BS,average,beta_zero)
