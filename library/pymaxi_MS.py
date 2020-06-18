@@ -3,6 +3,9 @@ Python Dictionary for getting the data out of the hdf files recorded with MAXI
 
 2020
 @author: dscran, KG, RB
+
+non-production version, just to test new functions
+
 """
 import h5py
 import numpy as np
@@ -24,7 +27,7 @@ def wait_for_entry(fname, entry_number):
         print(f'waiting for entry {entry_number} in {fname} ({t:.0f}s)',
               '\t\t', end='\r')
         time.sleep(1)
-    print(f'entry {entry_number} found.')
+    print('\nentry exists')
     return
 
 
@@ -53,9 +56,9 @@ def diode_scan(fname, entry_number, motor):
     -----
     author: KG 2020
     '''
-    with h5py.File(fname, 'r') as f:
-        diode = f[f'entry{entry_number:d}/measurement/diodeA'][()]
-        motor_val = f[f'entry{entry_number:d}/measurement/{motor:s}'][()]
+    f = h5py.File(fname, 'r')
+    diode = f[f'entry{entry_number:d}/measurement/diodeA'][()]
+    motor_val = f[f'entry{entry_number:d}/measurement/{motor:s}'][()]
     return (diode, motor_val)
 
 
@@ -69,8 +72,8 @@ def get_measurement(fname, entry_number, name):
     -----
     author: KG 2020
     '''
-    with h5py.File(fname, 'r') as f:
-        return f[f'entry{entry_number:d}/measurement/{name:s}'][()]
+    f = h5py.File(fname, 'r')
+    return f[f'entry{entry_number:d}/measurement/{name:s}'][()]
 
 
 def get_mte(fname, entry_number):
@@ -82,12 +85,11 @@ def get_mte(fname, entry_number):
     -----
     author: KG 2020
     '''
-    with h5py.File(fname, 'r') as f:
-        return f[f'entry{entry_number:d}/measurement/mte'][()][0]
+    f = h5py.File(fname, 'r')
+    return f[f'entry{entry_number:d}/measurement/mte'][()][0]
 
 ###############################################################################
 #       Beamshape
-
 
 def load_meshscan(fname, entry):
     '''

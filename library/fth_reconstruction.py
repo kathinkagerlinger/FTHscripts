@@ -39,7 +39,7 @@ def load_both(pos, neg, auto_factor=False):
         offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
         topo = pos - offset_pos + neg - offset_neg
         pos = pos - offset_pos
-        factor = np.sum(np.multiply(pos - offset_pos,topo))/np.sum(np.multiply(topo, topo))
+        factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
         print('Auto factor = ' + str(factor))
     else:
         topo = pos + neg
@@ -73,8 +73,10 @@ def load_single(image, topo, helicity, auto_factor=False):
 
     if auto_factor:
         offset_sing = (np.mean(image[:10,:10]) + np.mean(image[-10:,:10]) + np.mean(image[:10,-10:]) + np.mean(image[-10:,-10:]))/4
+        image = image - offset_sing
         offset_topo = (np.mean(topo[:10,:10]) + np.mean(topo[-10:,:10]) + np.mean(topo[:10,-10:]) + np.mean(topo[-10:,-10:]))/4
-        factor = np.sum(np.multiply(image - offset_sing,topo - offset_topo))/np.sum(np.multiply(topo - offset_topo, topo - offset_topo))
+        topo = topo - offset_topo
+        factor = np.sum(np.multiply(image, topo))/np.sum(np.multiply(topo, topo))
         print('Auto factor = ' + str(factor))
     else:
         factor = 0.5
@@ -434,13 +436,14 @@ def set_center(image, center):
     return image_shift
 
 
+
 ###########################################################################################
 
 #                                 BEAM STOP MASK                                          #
 
 ###########################################################################################
 
-def mask_beamstop(image, bs_size, sigma=10, center = None):
+def mask_beamstop(image, bs_size, sigma = 3, center = None):
     '''
     A smoothed circular region of the imput image is set to zero.
     INPUT:  image is the difference hologram
@@ -482,7 +485,7 @@ def mask_beamstop_matlab(image, mask, sigma=8):
 
 ###########################################################################################
 
-def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=True, px_size=13.5e-6):
+def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=True, px_size=20e-6):
     '''
     Parameters:
     ===========

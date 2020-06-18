@@ -3,6 +3,9 @@ Python Dictionary for FTH reconstructions in Python using functions defined in f
 
 2019
 @author: KG
+
+
+non-production version for testing
 """
 
 import os, sys

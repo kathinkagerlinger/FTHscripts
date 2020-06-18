@@ -1,4 +1,4 @@
-"""
+A"""
 Python Dictionary for FTH reconstructions in Python using functions defined in fth_reconstroction
 
 2019
@@ -16,6 +16,7 @@ from IPython.display import display
 #fth dictionary
 import fth_reconstruction as fth
 import cameras as cam
+import pymaxi as maxi
 
 
 
