@@ -529,6 +529,40 @@ def global_phase_shift(holo, phi):
     '''
     return holo*np.exp(1j*phi)
 
+
+###########################################################################################
+
+#                                   HIGH PASS FILTER                                      #
+
+###########################################################################################
+
+def highpass(data, amplitude, sigma):
+    '''
+    Creates a highpass Gauss filter with variable ampltitude and sigma and multiplies it to the given data.
+    
+    Parameters
+    ----------
+    data : array
+        the hologram you want to apply the highpass filter to
+    A : float
+        ampltitude of the Gauss, please input a positive number because -A is taken as factor for the Gauss
+    sigma: float
+        sigma of the Gauss
+    
+    Returns
+    -------
+    data * HP : array
+        given data multiplied with the Gauss high pass filter
+    -------
+    author: KG 2020
+    '''
+    x0, y0 = [s//2 for s in data.shape]
+    x,y = np.mgrid[-x0:x0, -y0:y0]
+    HP = -A * np.exp(-(x**2 + y**2)/sigma)
+    return data * HP
+
+
+
 ###########################################################################################
 
 #                                  CONFIG FILES                                           #
