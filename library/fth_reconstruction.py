@@ -558,7 +558,7 @@ def highpass(data, amplitude, sigma):
     '''
     x0, y0 = [s//2 for s in data.shape]
     x,y = np.mgrid[-x0:x0, -y0:y0]
-    HP = -A * np.exp(-(x**2 + y**2)/sigma)
+    HP = 1 - A * np.exp(-(x**2 + y**2)/sigma)
     return data * HP
 
 
