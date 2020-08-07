@@ -2,7 +2,10 @@
 Python Dictionary for FTH reconstructions
 
 2016/2019/2020
-@author: dscran & KG
+@authors:   MS: Michael Schneider (michael.schneider@mbi-berlin.de)
+            KG: Kathinka Gerlinger (kathinka.gerlinger@mbi-berlin.de)
+            FB: Felix Buettner (felix.buettner@helmholtz-berlin.de)
+            RB: Riccardo Battistelli (riccardo.battistelli@helmholtz-berlin.de)
 """
 
 import numpy as np
@@ -259,7 +262,7 @@ def eliminateCosmicRays(image,
     Filtered copy of image.
     
     -----
-    author: FB ??, 2016??
+    author: FB, 2016
     '''
     # Don't edit the provided image
     image = image.copy()
@@ -339,7 +342,7 @@ def average_over_n_nearest_pixels_2D(M,n,returnStdDev=False):
     in the input array.
     
     -----
-    author: FB ??, 2016??
+    author: FB 2016
     '''
     # To test / visualize the following code, copy and play with this:
     ## Simulate a matrix with x and y dimensions and a 3-vector in
@@ -403,7 +406,7 @@ def reconstruct(image):
     '''
     Reconstruct the image by fft
     -------
-    author: dscran 2016
+    author: MS 2016
     '''
     return np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(image)))
 
@@ -425,7 +428,7 @@ def set_center(image, center):
             center: center coordinates
     OUTPUT: centered hologram
     -------
-    author: dscran 2016, KG 2019
+    author: MS 2016, KG 2019
     '''
     xdim, ydim = image.shape
     xshift = integer(xdim / 2 - center[1])
@@ -435,7 +438,20 @@ def set_center(image, center):
     print('Shifted image by %i pixels in x and %i pixels in y.'%(xshift, yshift))
     return image_shift
 
-
+def sub_pixel_centering(reco, dx, dy):
+    '''
+    Routine for subpixel centering
+    INPUT:  reco :  the reconstructed image
+            dx, dy: floats for the shifting
+    RETURNS: shifted hologram
+    ------
+    author: KG, 2020
+    '''
+    sx, sy = reco.shape
+    x = np.arange(- sx//2, sx//2, 1)
+    y = np.arange(- sy//2, sy//2, 1)
+    xx, yy = np.meshgrid(x, y)
+    return reco * np.exp(2j * np.pi * (xx * dx/sx + yy * dy/sy))
 
 ###########################################################################################
 
@@ -452,7 +468,7 @@ def mask_beamstop(image, bs_size, sigma = 3, center = None):
             center: if the hologram is not centered, you can input the center coordinates for the beamstop mask. Default is None, so the center of the picture is taken.
     OUTPUT: hologram multiplied with the beamstop mask
     -------
-    author: dscran 2016, KG 2019
+    author: MS 2016, KG 2019
     '''
 
     #Save the center of the beamstop. If none is given, take the center of the image.
@@ -500,7 +516,7 @@ def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=Tr
     holo : propagated hologram
     
     ========
-    written by Michael Schneider 2016
+    author: MS 2016
     '''
     wl = cst.h * cst.c / (energy * cst.e)
     if integer_wl_multiple:
@@ -516,6 +532,27 @@ def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=Tr
 
     print ('Propagation distance: %.2fum' % (prop_l*1e6)) 
     return holo
+
+def propagate_realspace(image, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=True, px_size=20e-6):
+    '''
+    Parameters:
+    ===========
+    holo : real space image to be propagated
+    prop_l : propagation distance [m]
+    ccd_dist : CCD - sample distance [m]
+    energy : photon energy [eV] 
+    integer_wl_mult : if true, coerce propagation distance to nearest integermultiple of photon wavelength 
+    
+    Returns:
+    ========
+    image : propagated image
+    
+    ========
+    author: KG 2020
+    '''
+    holo = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(image)))
+    holo = propagate(holo, prop_l, ccd_dist = ccd_dist, energy = energy, integer_wl_multiple = integer_wl_multiple, px_size = px_size) 
+    return reconstruct(holo)
 
 ###########################################################################################
 
@@ -584,7 +621,7 @@ def save_reco_dict_to_hdf(fname, reco_dict):
     grp : str
         Name of the new data group.
     -------
-    author: dscran 2020
+    author: MS 2020
     '''
     with h5py.File(fname, mode='a') as f:
         i = 0
