@@ -2,7 +2,7 @@
 Python Dictionary for FTH reconstructions
 
 2016/2019/2020
-@authors:   MS: Michael Schneider (michael.schneider@mbi-berlin.de)
+@authors:   MS: Michael Schneider (michaelschneider@mbi-berlin.de)
             KG: Kathinka Gerlinger (kathinka.gerlinger@mbi-berlin.de)
             FB: Felix Buettner (felix.buettner@helmholtz-berlin.de)
             RB: Riccardo Battistelli (riccardo.battistelli@helmholtz-berlin.de)
@@ -448,8 +448,8 @@ def sub_pixel_centering(reco, dx, dy):
     author: KG, 2020
     '''
     sx, sy = reco.shape
-    x = np.arange(- sx//2, sx//2, 1)
-    y = np.arange(- sy//2, sy//2, 1)
+    x = np.arange(- sy//2, sy//2, 1)
+    y = np.arange(- sx//2, sx//2, 1)
     xx, yy = np.meshgrid(x, y)
     return reco * np.exp(2j * np.pi * (xx * dx/sx + yy * dy/sy))
 
@@ -595,9 +595,8 @@ def highpass(data, amplitude, sigma):
     '''
     x0, y0 = [s//2 for s in data.shape]
     x,y = np.mgrid[-x0:x0, -y0:y0]
-    HP = 1 - A * np.exp(-(x**2 + y**2)/sigma)
-    return data * HP
-
+    HP = 1 - amplitude * np.exp(-(x**2 + y**2)/(2*sigma**2))
+    return (data * HP, HP)
 
 
 ###########################################################################################
@@ -725,14 +724,14 @@ def read_hdf(fname):
         i += 1
     i -= 1
     
-    image_numbers = f[f'reco{i:02d}/image numbers'].value
-    topo_numbers = f[f'reco{i:02d}/topo numbers'].value 
-    factor = f[f'reco{i:02d}/factor'].value
-    center = f[f'reco{i:02d}/center'].value
-    bs_diam = f[f'reco{i:02d}/beamstop diameter'].value
-    prop_dist = f[f'reco{i:02d}/Propagation distance'].value
-    phase = f[f'reco{i:02d}/phase'].value
-    roi = f[f'reco{i:02d}/ROI coordinates'].value
+    image_numbers = f[f'reco{i:02d}/image numbers'][()]
+    topo_numbers = f[f'reco{i:02d}/topo numbers'][()]
+    factor = f[f'reco{i:02d}/factor'][()]
+    center = f[f'reco{i:02d}/center'][()]
+    bs_diam = f[f'reco{i:02d}/beamstop diameter'][()]
+    prop_dist = f[f'reco{i:02d}/Propagation distance'][()]
+    phase = f[f'reco{i:02d}/phase'][()]
+    roi = f[f'reco{i:02d}/ROI coordinates'][()]
 
     return (image_numbers, topo_numbers, factor, center, bs_diam, prop_dist, phase, roi)
 

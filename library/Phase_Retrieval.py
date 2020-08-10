@@ -1,3 +1,12 @@
+"""
+Python Dictionary for Phase retrieval in Python using functions defined in fth_reconstroction
+
+2020
+@authors:   RB: Riccardo Battistelli (riccardo.battistelli@helmholtz-berlin.de)
+            MS: Michael Schneider (michaelschneider@mbi-berlin.de)
+            KG: Kathinka Gerlinger (kathinka.gerlinger@mbi-berlin.de)
+"""
+
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.gridspec import GridSpec
@@ -12,6 +21,7 @@ import ipywidgets as widgets
 from skimage.draw import circle
 import h5py
 import math
+import cupy as cp
 
 
 #############################################################
@@ -19,21 +29,28 @@ import math
 #############################################################
 
 def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
-       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],real_object=False,average_img=10):#,bs_mask=np.zeros((diffract.shape[0],diffract.shape[1]))):
-    '''Iterative phase retrieval function
-        diffract=far field data, mask=support , mode=algorithm type, Nit= number of step
-        beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
-        ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
-        real_object=possibility of only real image
-        plot_every= how often you plot data
-        average_img=number of image to be averaged
+       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,real_object=False,average_img=10):
+    '''
+    Iterative phase retrieval function
+    INPUT:  diffract=far field data
+            mask=support
+            mode=algorithm type
+            Nit= number of step
+            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
+            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
+            real_object=possibility of only real image
+            plot_every= how often you plot data
+            average_img=number of image to be averaged
         
-        returns in output retrieved image
+    OUTPUT: retrieved image
+            diffraction pattern (THE OUTPUT IS ACTUALLY WRONG BECAUSE IT'S
+    ----
+    author: RB 2020
     '''
 
     #set titles of plotted images
     fig=plt.figure()
-    gs=GridSpec(1,2, left=0, right=0.25) # 2 rows, 3 columns
+    gs=GridSpec(1,2, left=0, right=0.3) # 2 rows, 3 columns
     #fig, ax = plt.subplots(3,2)   
     ax1=fig.add_subplot(gs[:,:]) # First column, all rows
     title0='Error plot (diffr_sim-diffr_exp)'
@@ -47,9 +64,9 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
     ax1bis.set_ylabel('Err supp', color=color)  # we already handled the x-label with ax1
     ax1bis.tick_params(axis='y', labelcolor=color)
     
-    gs2=GridSpec(2,2,left=0.45, right=1) # 2 rows, 3 columns
-    ax2=fig.add_subplot(gs2[0,0]) # First row, second column
-    ax3=fig.add_subplot(gs2[1,0]) # second row, second column
+    gs2=GridSpec(2,2,left=0.5, right=2) # 2 rows, 3 columns
+    ax2=fig.add_subplot(gs2[:,0]) # First row, second column
+    #ax3=fig.add_subplot(gs2[1,0]) # second row, second column
     ax4=fig.add_subplot(gs2[0,1]) # First row, third column
     ax5=fig.add_subplot(gs2[1,1]) # second row, third column
  
@@ -59,19 +76,19 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
     Error_diffr_list=[]
     Best_guess=np.zeros((average_img,l,n),dtype = 'complex_')
     Best_error=np.zeros(average_img)
-    BSmask=np.zeros((l,n))
+
+    BSmask=bsmask
     BS_radius=BS[2]
     yy, xx = circle(BS[1], BS[0], BS_radius)
     if BS_radius>0:
         BSmask[yy, xx] = 1
-    #BSmask+=bs_mask
     
     #prepare beta function
     step=np.arange(Nit)
     if beta_mode=='const':
         Beta=beta_zero*np.ones(Nit)
     elif beta_mode=='arctan':
-        Beta=beta_zero+(0.5-np.arctan((step-900)/(0.15*Nit))/(np.pi))*(0.98-beta_zero)
+        Beta=beta_zero+(0.5-np.arctan((step-500)/(0.15*Nit))/(np.pi))*(0.98-beta_zero)
     elif beta_mode=='exp':
         Beta=beta_zero+(1-beta_zero)*(1-np.exp(-(step/7)**3))
     elif beta_mode=='linear_to_beta_zero':
@@ -103,10 +120,7 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
         beta=Beta[s]
         
         #apply fourier domain constraints (only outside BS)
-        if BS_radius==0:
-            update = diffract * np.exp(1j * np.angle(guess))
-        else:
-            update = (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask
+        update = (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask
         
         inv = np.fft.fft2(update)
         if real_object:
@@ -171,7 +185,7 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
             im_abs=np.abs(im)
             im_angle=np.angle(im)
             ax2.imshow(np.log10(np.abs(np.fft.ifftshift(guess))), cmap='coolwarm')
-            ax3.imshow(im_abs, cmap='binary')
+            #ax3.imshow(im_abs, cmap='binary')
 
             abs_detail=im_abs[ROI[2]:ROI[3],ROI[0]:ROI[1]]
             angle_detail=im_angle[ROI[2]:ROI[3],ROI[0]:ROI[1]]
@@ -187,54 +201,36 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
     guess==np.sum(Best_guess,axis=0)/average_img
 
     #return final image
-    if BS_radius==0:
-        return np.fft.ifftshift(np.fft.fft2(diffract * np.exp(1j * np.angle(guess)))), diffract * np.exp(1j * np.angle(guess))
-    else:
-        return np.fft.ifftshift(np.fft.fft2((1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask)), (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask
+    return (np.fft.ifftshift(np.fft.fft2((guess)) + guess*BSmask), guess)
     
 
-def PhaseRtrv_fast(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
-       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],real_object=False):
-    '''Iterative phase retrieval function
-        diffract=far field data, mask=support , mode=algorithm type, Nit= number of step
-        beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from, random Phase is Phase=0,
-        ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(center_y,center_x,radius) of BeamStopper,
-        real_object=possibility of only real image
-        plot_every= how often you plot data
+def PhaseRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,seed=False,
+       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,real_object=False,average_img=10):
+    '''
+    Iterative phase retrieval function optimized to run on GPU
+    INPUT:  diffract=far field data
+            mask=support
+            mode=algorithm type
+            Nit= number of step
+            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
+            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
+            real_object=possibility of only real image
+            plot_every= how often you plot data
+            average_img=number of image to be averaged
         
-        returns in output retrieved image
-
-        Riccardo Battistelli, 01/06/20
+    OUTPUT: retrieved image, diffraction pattern, error list on magnitude, error list on support
+    ----
+    author: RB 2020
     '''
 
-    #set titles of plotted images
-    fig=plt.figure()
-    gs=GridSpec(1,2, left=0, right=0.25) # 2 rows, 3 columns
-    #fig, ax = plt.subplots(3,2)   
-    ax1=fig.add_subplot(gs[:,:]) # First column, all rows
-    title0='Error plot (diffr_sim-diffr_exp)'
-    color = 'tab:red'
-    ax1.set_xlabel('step')
-    ax1.set_ylabel('Err diffr', color=color)
-    ax1.tick_params(axis='y', labelcolor=color)
-
-    ax1bis = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    color = 'tab:blue'
-    ax1bis.set_ylabel('Err supp', color=color)  # we already handled the x-label with ax1
-    ax1bis.tick_params(axis='y', labelcolor=color)
-    
-    gs2=GridSpec(2,2,left=0.45, right=1) # 2 rows, 3 columns
-    ax2=fig.add_subplot(gs2[0,0]) # First row, second column
-    ax3=fig.add_subplot(gs2[1,0]) # second row, second column
-    ax4=fig.add_subplot(gs2[0,1]) # First row, third column
-    ax5=fig.add_subplot(gs2[1,1]) # second row, third column
-
-    
-    
     #set parameters and BSmask
     (l,n) = diffract.shape
     alpha=None
-    BSmask=np.zeros((l,n))
+    Error_diffr_list=[]
+    Error_supp_list=[]
+    
+
+    BSmask=bsmask
     BS_radius=BS[2]
     yy, xx = circle(BS[1], BS[0], BS_radius)
     if BS_radius>0:
@@ -245,13 +241,16 @@ def PhaseRtrv_fast(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='con
     if beta_mode=='const':
         Beta=beta_zero*np.ones(Nit)
     elif beta_mode=='arctan':
-        Beta=beta_zero+(0.5-np.arctan((step-0.45*Nit)/(0.15*Nit))/(np.pi))*(0.98-beta_zero)
+        Beta=beta_zero+(0.5-np.arctan((step-500)/(0.15*Nit))/(np.pi))*(0.98-beta_zero)
     elif beta_mode=='exp':
         Beta=beta_zero+(1-beta_zero)*(1-np.exp(-(step/7)**3))
     elif beta_mode=='linear_to_beta_zero':
         Beta= 1+(beta_zero-1)/Nit*step
     elif beta_mode=='linear_to_1':
         Beta= beta_zero+(1-beta_zero)/Nit*step
+        
+    if seed==True:
+        np.random.seed(0)
       
     #set initial Phase guess
     if type(Phase)==int:
@@ -272,86 +271,299 @@ def PhaseRtrv_fast(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='con
     mask=np.fft.fftshift(mask)
     diffract=np.fft.fftshift(diffract)
     
+    BSmask_cp=cp.asarray(BSmask)
+    guess_cp=cp.asarray(guess)
+    mask_cp=cp.asarray(mask)
+    diffract_cp=cp.asarray(diffract)
+    
+    Best_guess=cp.zeros((average_img,l,n),dtype = 'complex_')
+    Best_error=cp.zeros(average_img)
+    
+    print('mode=',mode,'    beta_mode=',beta_mode)
+    
     for s in range(0,Nit):
 
         beta=Beta[s]
         
         #apply fourier domain constraints (only outside BS)
-        if BS_radius==0:
-            update = diffract * np.exp(1j * np.angle(guess))
-        else:
-            update = (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask
+        update = (1-BSmask_cp) *diffract_cp* cp.exp(1j * cp.angle(guess_cp)) + guess_cp*BSmask_cp
         
-        inv = np.fft.fft2(update)
+        inv = cp.fft.fft2(update)
         if real_object:
-            inv=np.real(inv)
+            inv=cp.real(inv)
         
         if prev is None:
             prev=inv.copy()
             
         #support Projection
         if mode=='ER':
-            inv=inv*mask
+            inv=inv*mask_cp
         elif mode=='HIOs':
-            inv =  inv + (1-mask)*(prev - (beta+1) * inv)
-        elif mode=='HIO':
-            inv =  inv + (1-mask)*(prev - (beta+1) * inv) + mask*(prev - (beta+1) * inv)*np.heaviside(-np.real(inv),0)
+            inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv)
+        #elif mode=='HIO':
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv) + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(-cp.real(inv),0)
         elif mode=='RAAR':
-            inv = inv + (1-mask)*(beta*prev - 2*beta*inv)
-            + mask*(beta*prev -2*beta*inv)* np.heaviside(np.real(-2*inv+prev),0)
-        elif mode=='OSS':
-            inv =  inv + (1-mask)*(prev - (beta+1) * inv) + mask*(prev - (beta+1) * inv)*np.heaviside(-np.real(inv),0)
-            #smooth region outside support for smoothing
-            alpha= l - (l-1/l)* np.floor(s/Nit*10)/10
-            smoothed= np.fft.ifft2( W(inv.shape[0],inv.shape[1],alpha) * np.fft.fft2(inv))          
-            inv= mask*inv + (1-mask)*smoothed
-        elif mode=='CHIO':
-            alpha=0.4
-            inv= (prev-beta*inv) + mask*np.heaviside(np.real(inv-alpha*prev),1)*(-prev+(beta+1)*inv)
-            + np.heaviside(np.real(-inv+alpha*prev),1)*np.heaviside(np.real(inv),1)* ((beta-(1-alpha)/alpha)*inv)
-        elif mode=='HPR':
-            alpha=0.4
-            inv =  inv + (1-mask)*(prev - (beta+1) * inv)
-            + mask*(prev - (beta+1) * inv)*np.heaviside(np.real(prev-(beta-3)*inv),0)
+            inv = inv + (1-mask_cp)*(beta*prev - 2*beta*inv)
+            + (beta*prev -2*beta*inv)* mask_cp* cp.where(-2*inv+prev>0,1,0)
+            #cp.heaviside(cp.real(-2*inv+prev),0)
+        #elif mode=='OSS':
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv) + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(-cp.real(inv),0)
+        #    #smooth region outside support for smoothing
+        #    alpha= l - (l-1/l)* cp.floor(s/Nit*10)/10
+        #    smoothed= cp.fft.ifft2( W(inv.shape[0],inv.shape[1],alpha) * cp.fft.fft2(inv))          
+        #    inv= mask_cp*inv + (1-mask_cp)*smoothed
+        #elif mode=='CHIO':
+        #    alpha=0.4
+        #    inv= (prev-beta*inv) + mask_cp*cp.heaviside(cp.real(inv-alpha*prev),1)*(-prev+(beta+1)*inv)
+        #    + cp.heaviside(cp.real(-inv+alpha*prev),1)*cp.heaviside(cp.real(inv),1)* ((beta-(1-alpha)/alpha)*inv)
+        #elif mode=='HPR':
+        #    alpha=0.4
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv)
+        #    + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(cp.real(prev-(beta-3)*inv),0)
 
                          
         prev=inv.copy()
-        guess = np.fft.ifft2(inv)
+        guess_cp = cp.fft.ifft2(inv)
+        
+        #compute error to see if image has to end up among the best. Add in Best_guess array to sum them up at the end
+        Error_diffr = Error_diffract(cp.abs(guess_cp)*(1-BSmask_cp), diffract_cp*(1-BSmask_cp))
+        Error_diffr_list.append(Error_diffr)
+        if s>2:
+            if Error_diffr<=Error_diffr_list[s-1] and Error_diffr<=Error_diffr_list[s-2]:
+                j=cp.argmax(Best_error)
+                if Error_diffr<Best_error[j]:
+                    Best_error[j]=Error_diffr
+                    Best_guess[j,:,:]=guess_cp
 
         
-        #save an image of the progress
+        #COMPUTE ERRORS
+        if s % plot_every == 0:
+            
+            Error_supp = Error_support(cp.abs(guess_cp),mask_cp)
+            Error_supp_list.append(Error_supp)
+        
+            print('#',s,'   beta=',beta,'   Error_diffr=',Error_diffr, '   Error_supp=',Error_supp)
+
+    #sum best guess images
+    guess_cp==cp.sum(Best_guess,axis=0)/average_img
+    
+    guess=cp.asnumpy(guess_cp)
+
+    #return final image
+    return (np.fft.ifftshift(np.fft.fft2(guess)), guess, Error_diffr_list, Error_supp_list)
+
+#return np.fft.ifftshift(np.fft.fft2((1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask)), (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask, #Error_diffr_list, Error_supp_list
+
+
+###################################
+
+def dinamic_support(im_p, im_n, mask, ROI, N_std=4):
+    '''
+    Confronts two retrieved images and reduces the support size by eliminating pixels where the angle of their ratio is N std deviations greater than the average
+    INPUT:  im_p: array, first retrieved image
+            im_n: array, second retrieved image
+            mask: array
+            ROI: array, corrdinates for your FOV [x1, x2, y1, y2]
+            N_std: optional, int, maximal deviation from the average of the angle of their ratio (default is 4)
+    OUPUT: new mask
+    ----
+    author: RB 2020
+    '''
+    
+    clear_output(wait=True)
+    
+    im=(im_p/im_n)*mask
+    
+    im=np.nan_to_num(im, nan=1, posinf=1, neginf=1)
+    im_angle=np.angle(im)
+    std_dev=np.std(im_angle)
+    average=np.average(im_angle)
+    
+    im=(im_p/im_n)*mask
+    im=np.nan_to_num(im, nan=1, posinf=1, neginf=1)
+    
+    new_mask = np.abs(im_angle-average) < N_std*std_dev
+    new_mask= new_mask*mask
+    
+    fig,ax=plt.subplots(1,2)
+    ax[0].imshow(im_angle[ROI[2]:ROI[3],ROI[0]:ROI[1]],cmap='Greys')
+    ax[0].imshow(mask[ROI[2]:ROI[3],ROI[0]:ROI[1]],cmap='binary',alpha=0.3)
+    ax[0].imshow(new_mask[ROI[2]:ROI[3],ROI[0]:ROI[1]],cmap='viridis',vmin=0,vmax=1,alpha=0.4)
+    
+    ax[1].imshow(im_angle,cmap='Greys')
+    ax[1].imshow(mask,cmap='binary',alpha=0.3)
+    ax[1].imshow(new_mask,cmap='viridis',vmin=0,vmax=1,alpha=0.4)
+    
+    #display(plt.gcf())
+    
+    return new_mask
+    
+    
+    
+#########################################################################
+#    Amplitude retrieval
+#########################################################################
+
+def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
+       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,average_img=10):
+    '''Iterative Amplitude retrieval function
+
+    Given a diffraction pattern and a support (mask) including the auto- and cross- correlation terms
+    (can be done by FFT the support mask used for CDI and applying a threshold, or directly by finding it from the FTH reconstruction)
+    this function apply an iterative algorith with two constraint: the FTH reconstruction must be zero outside of the support, and the diffraction pattern must be real and positive.
+    Outputs the filtered diffraction pattern, which should in theory have less camera artifacts
+        
+    INPUT:  diffract=far field data
+            mask=support
+            mode=algorithm type
+            Nit= number of step
+            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
+            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
+            real_object=possibility of only real image
+            plot_every= how often you plot data
+            average_img=number of image to be averaged
+        
+    OUTPUT: retrieved image, Error_diffr_list, Error_supp_list
+    ----
+    author: RB 2020
+    '''
+    
+    #set titles of plotted images
+    
+    fig, ax = plt.subplots(1,3)   
+    
+
+ 
+    #set parameters and BSmask
+    (l,n) = diffract.shape
+    alpha=None
+    Error_diffr_list=[]
+    Error_supp_list=[]
+    
+
+    BSmask=bsmask
+    BS_radius=BS[2]
+    yy, xx = circle(BS[1], BS[0], BS_radius)
+    if BS_radius>0:
+        BSmask[yy, xx] = 1
+    
+    #prepare beta function
+    step=np.arange(Nit)
+    if beta_mode=='const':
+        Beta=beta_zero*np.ones(Nit)
+    elif beta_mode=='arctan':
+        Beta=beta_zero+(0.5-np.arctan((step-500)/(0.15*Nit))/(np.pi))*(0.98-beta_zero)
+    elif beta_mode=='exp':
+        Beta=beta_zero+(1-beta_zero)*(1-np.exp(-(step/7)**3))
+    elif beta_mode=='linear_to_beta_zero':
+        Beta= 1+(beta_zero-1)/Nit*step
+    elif beta_mode=='linear_to_1':
+        Beta= beta_zero+(1-beta_zero)/Nit*step
+      
+    #set initial Phase guess
+    if type(Phase)==int:
+        Phase=np.random.rand(l,n)*np.pi*2 #-np.pi/2
+        Phase0=np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(Phase)))
+    else:
+        Phase0=np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(Phase)))
+        Phase=np.angle(Phase0)
+
+    guess = (1-BSmask)*diffract * np.exp(1j * Phase)+ Phase0*BSmask
+  
+    #previous result
+    prev = None
+    
+    FTHrec=fth.reconstruct(diffract)
+    #shift everything to the corner
+    BSmask=np.fft.fftshift(BSmask)
+    guess=np.fft.fftshift(guess)+
+    diffract=np.fft.fftshift(diffract)
+    
+    
+    
+    BSmask_cp=cp.asarray(BSmask)
+    guess_cp=cp.asarray(guess)
+    mask_cp=cp.asarray(mask)
+    diffract_cp=cp.asarray(diffract)
+    FTHrec_cp=cp.asarray(FTHrec)
+    cpROI=cp.asarray(ROI)
+    
+    Best_guess=cp.zeros((average_img,l,n),dtype = 'complex_')
+    Best_error=cp.zeros(average_img)
+    
+    print('mode=',mode,'    beta_mode=',beta_mode)
+    
+    for s in range(0,Nit):
+
+        beta=Beta[s]
+        
+       
+        update = guess_cp
+        
+        inv = (cp.fft.ifft2((update))) #inv is the FTH reconstruction
+        
+        inv=cp.fft.ifftshift(inv)
+        
+        if prev is None:
+            prev=inv.copy()
+            
+        #FTH reconstruction condition
+        if mode=='ER':
+            inv=FTHrec_cp*mask_cp
+        elif mode=='HIOs':
+            inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv)
+        elif mode=='RAAR':
+            inv = FTHrec_cp + (1-mask_cp)*(beta*prev - 2*beta*FTHrec_cp)
+            + (beta*prev -2*beta*FTHrec_cp)* mask_cp* cp.where(-2*FTHrec_cp+prev>0,1,0)
+
+                         
+        prev=inv.copy()
+        
+        inv=cp.fft.fftshift(inv)
+        
+         #apply real and positive diffraction pattern constraint
+        guess_cp = np.maximum(cp.real( cp.fft.fft2(inv) ) , cp.zeros(guess_cp.shape))
+        
+        #compute error to see if image has to end up among the best. Add in Best_guess array to sum them up at the end
+        Error_diffr = Error_diffract(cp.abs(guess_cp)*(1-BSmask_cp), diffract_cp*(1-BSmask_cp))
+        Error_diffr_list.append(Error_diffr)
+        if s>2:
+            if Error_diffr<=Error_diffr_list[s-1] and Error_diffr<=Error_diffr_list[s-2]:
+                j=cp.argmax(Best_error)
+                if Error_diffr<Best_error[j]:
+                    Best_error[j]=Error_diffr
+                    Best_guess[j,:,:]=guess_cp
+
+        
+        #COMPUTE ERRORS
         if s % plot_every == 0:
             clear_output(wait=True)
-            Error_diffr = Error_diffract(np.abs(guess)*(1-BSmask),diffract*(1-BSmask))
-            Error_supp = Error_support(np.abs(guess),mask)
             
-            ax1.scatter(s,Error_diffr,marker='o',color='red')
-            ax1bis.scatter(s,Error_supp,marker='x',color='blue')
-            #fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            Error_supp = Error_support(cp.abs(guess_cp),mask_cp)
             
-            im=np.fft.ifftshift(inv)
+            guessplot=np.fft.fftshift(cp.asnumpy(guess_cp))
             
-            im_abs=np.abs(im)
-            im_angle=np.angle(im)
-            ax2.imshow(np.abs(np.fft.ifftshift(guess)), cmap='RdBu')
+            im=(np.fft.ifft2((guessplot)))
             
-            ax3.imshow(im_abs, cmap='binary')
+            im_real=np.real(im)
+            mir, mar = np.percentile(im_real[ROI[2]:ROI[3],ROI[0]:ROI[1]], (0,100))
+            print(mir,mar)
+            im_imag=np.imag(im)
+            
+            ax[0].imshow((guessplot), cmap='coolwarm')
 
-            abs_detail=im_abs[ROI[2]:ROI[3],ROI[0]:ROI[1]]
-            angle_detail=im_angle[ROI[2]:ROI[3],ROI[0]:ROI[1]]
-            ax4.imshow(abs_detail, cmap='binary')
-            ax5.imshow(angle_detail, cmap='RdBu',vmin=-np.pi/2,vmax=np.pi/2)
-            
+            real_detail=im_real
+            imag_detail=im_imag
+            ax[1].imshow(real_detail,vmin=mir,vmax=mar)
+            ax[2].imshow(imag_detail, cmap='hsv',vmin=-cp.pi,vmax=cp.pi)
 
             display(plt.gcf())
         
-            print('step:',s,'   beta=',beta,'   alpha=',alpha, '    mode=',mode)
+            print(cp.sum(guess_cp),'#',s,'   beta=',beta,'   Error_diffr=',Error_diffr, '   Error_supp=',Error_supp)
+   
+    guess=cp.asnumpy(guess_cp)
 
-    #apply fourier domain constraints (only outside BS)
-    if BS_radius==0:
-        return np.fft.ifftshift(np.fft.fft2(diffract * np.exp(1j * np.angle(guess))))
-    else:
-        return np.fft.ifftshift(np.fft.fft2((1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask))
+    return (np.fft.ifftshift(guess) , Error_diffr_list, Error_supp_list)
 
 #############################################################
 #    FILTER FOR OSS
@@ -499,7 +711,7 @@ def save_reco_dict_to_hdf(fname, reco_dict):
     grp : str
         Name of the new data group.
     -------
-    author: dscran 2020
+    author: MS 2020
     '''
     with h5py.File(fname, mode='a') as f:
         i = 0
@@ -732,3 +944,32 @@ def inv_gnomonic(CCD, z=20e-2, center_y=10, center_x=10, px_size=20e-6):
 
 
     return Output
+
+
+#############################################################
+#    Fourier Ring Correlation
+#############################################################
+
+def FRC(im1,im2,width_bin):
+    '''
+    implements Fourier Ring Correlation. Can select the width of the bins in pixels. outputs arrays of the numerator and denominator
+    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)'''
+    
+    shape=im1.shape
+    Num_bins=shape[0]//(2*width_bin)
+    sum_num=np.zeros(Num_bins)
+    sum_den=np.zeros(Num_bins)
+    center = np.array([shape[0]//2, shape[1]//2])
+    
+    for i in range(Num_bins):
+        annulus = np.zeros(shape)
+        yy_outer, xx_outer = circle(center[1], center[0], (i+1)*width_bin)
+        yy_inner, xx_inner = circle(center[1], center[0], i*width_bin)
+        annulus[yy_outer,xx_outer]=1
+        annulus[yy_inner,xx_inner]=0
+
+        #a for cycle going through the various rings, summing up the terms for the denominator and calculating each term in the ring
+        sum_num[i]=np.sum( im1* np.conj(im2) * annulus )#np.sum( im1[np.nonzero(annulus)] * np.conj(im2[np.nonzero(annulus)]) )
+        sum_den[i]=np.sqrt( np.sum(np.abs(im1)**2* annulus) * np.sum(np.abs(im2)**2* annulus) )
+        
+    return sum_num,sum_den

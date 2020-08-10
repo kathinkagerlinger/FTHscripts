@@ -2,7 +2,9 @@
 Python Dictionary for getting the data out of the hdf files recorded with MAXI
 
 2020
-@author: dscran, KG, RB
+@authors:   KG: Kathinka Gerlinger (kathinka.gerlinger@mbi-berlin.de)
+            RB: Riccardo Battistelli (riccardo.battistelli@helmholtz-berlin.de)
+            MS: Michael Schneider (michaelschneider@mbi-berlin.de)
 """
 import h5py
 import numpy as np

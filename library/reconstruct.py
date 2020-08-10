@@ -1,8 +1,10 @@
 """
 Python Dictionary for FTH reconstructions in Python using functions defined in fth_reconstroction
 
-2019
-@author: KG
+2019/2020
+@authors:   KG: Kathinka Gerlinger (kathinka.gerlinger@mbi-berlin.de)
+            RB: Riccardo Battistelli (riccardo.battistelli@helmholtz-berlin.de)
+            MS: Michael Schneider (michaelschneider@mbi-berlin.de)
 """
 
 import os, sys
@@ -380,7 +382,156 @@ def phase_shift(holo, roi, phase=0):
     button.on_click(on_button_clicked)
     return (slider_phase, button)
 
+###########################################################################################
 
+#                               FINE TUNING                                               #
+
+###########################################################################################
+
+
+def deconvolve(holo, ROI, E0=0, Q=0.1, phi=0.1, scale=(0,100)):
+    '''
+    starts the quest for the right deconvolution by the ref. hole point spread function
+    (https://www.sciencedirect.com/science/article/pii/S030439911930333X?via%3Dihub)
+    INPUT:  holo: array, the centered and masked hologram
+            ROI: array, ROI coordinates for your FOV [x1, x2, y1, y1]
+            E0: optional, float, starting value for the E0 slider (default is 0)
+            Q: optional, float, starting value for the Q slider (default is 0.1)
+            phi: optional, float, starting value for the phi slider (default is 0.1)
+    OUTPUT: the three sliders E0, Q, phi. When you are finished, you can save the positions of the sliders.
+    ----
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(1,2)
+
+    npx,npy=holo.shape
+    Y,X = np.meshgrid(range(npy),range(npx))
+    R=np.sqrt((X-npx/2)**2+(Y-npy/2)**2)
+    
+    def p(x,y,phi):
+        #create bessel function
+        J=x*2*spec.j1(R*y*Q)/(R*y*Q)
+        J[(npx//2),npy//2]=x
+        #Wiener filtering
+        J_w=(J**2+phi)/J
+        image = fth.reconstruct(holo/J_w)
+        mir, mar = np.percentile(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
+        mii, mai = np.percentile(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
+
+        ax1 = axs[0].imshow(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mir, vmax = mar)
+        #fig.colorbar(ax1, ax=axs[0], fraction=0.046, pad=0.04)
+        axs[0].set_title("Real Part")
+        ax2 = axs[1].imshow(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mii, vmax = mai)
+        #fig.colorbar(ax2, ax=axs[1], fraction=0.046, pad=0.04)
+        axs[1].set_title("Imaginary Part")
+        fig.tight_layout()
+        print('REAL: max=%i, min=%i'%(np.max(np.real(image)), np.min(np.real(image))))
+        print('IMAG: max=%i, min=%i'%(np.max(np.imag(image)), np.min(np.imag(image))))
+        return
+    
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_E0 = widgets.FloatSlider(min=0, max=10, step=0.01, value=E0, layout=layout, description='E0', style=style)
+    slider_Q = widgets.FloatSlider(min=0, max=10, step=0.01, value=1, layout=layout, description='Q=pix_size*Rref/(lambda*z)', style=style)
+    slider_phi = widgets.FloatSlider(min=0, max=10, step=0.01, value=phi, layout=layout, description='phi', style=style)
+    
+    widgets.interact(p, x=slider_E0, y=slider_Q, phi=slider_phi)
+
+    #input("Press the <ENTER> key to continue...")
+    button = widgets.Button(description="Finished")
+    display(button)
+    
+    def on_button_clicked(b):
+        slider_E0.close()
+        slider_Q.close()
+        slider_phi.close()
+        return
+    button.on_click(on_button_clicked)
+
+    return (slider_E0, slider_Q, slider_phi, button)
+
+
+def high_pass_filtering(holo, amp = .5, sig = 60):
+    '''
+    Applies a high pass Gauss filter to the hologram and lets you determine the amplitude and sigma.
+    INPUT:  holo: array, the shifted and masked hologram
+            amp: optional, float, starting value for the amplitude (default is .5)
+            sig: optional, float, starting value for the sigma (default is 60)
+    OUTPUT: the two sliders for the amplitude and the sigma. When you are finished, you can save the positions of the sliders.
+    -------
+    author: KG 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(1,3, figsize = (10, 3))
+    def p(amp, sig):
+        holo_HP, HP = fth.highpass(holo,amplitude=amp,sigma=sig)
+
+        ax1 = axs[0].imshow(holo, cmap='gray')
+        axs[0].set_title("Original hologram")
+        ax2 = axs[1].imshow(HP, cmap='gray')
+        axs[1].set_title("High Pass")
+        ax3 = axs[2].imshow(holo_HP, cmap='gray')
+        axs[2].set_title("High Pass Hologram")
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_amp = widgets.FloatSlider(min=0, max=1, step=0.001, value=.5, layout=layout,
+                                      description='amplitude', style=style)
+    slider_sig = widgets.FloatSlider(min=0, max=500, step=0.5, value=60, layout=layout,
+                                       description='sigma', style=style)
+
+    widgets.interact(p, amp=slider_amp, sig=slider_sig)
+
+    return(slider_amp, slider_sig)
+
+def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, energy=779.5, px_size=20e-6):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    INPUT:  holo: array, the shifted and masked hologram
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+            energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+            px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: KG 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(1,2)
+    def p(x, y, fx, fy):
+        image = fth.reconstruct(fth.propagate(holo, x*1e-6)*np.exp(1j*y))
+        simage = fth.sub_pixel_centering(image, fx, fy)
+
+        ax1 = axs[0].imshow(np.real(simage[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
+        axs[0].set_title("Real Part")
+        ax2 = axs[1].imshow(np.imag(simage[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
+        axs[1].set_title("Imaginary Part")
+        fig.tight_layout()
+        print('REAL: max=%i, min=%i'%(np.max(np.real(simage)), np.min(np.real(simage))))
+        print('IMAG: max=%i, min=%i'%(np.max(np.imag(simage)), np.min(np.imag(simage))))
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-10, max=10, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -2, max = 2, step = 0.1, value = 0, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -2, max = 2, step = 0.1, value = 0, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
 
 ###########################################################################################
 
