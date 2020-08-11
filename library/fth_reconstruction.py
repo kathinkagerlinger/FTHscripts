@@ -30,8 +30,8 @@ from skimage.draw import circle
 def load_both(pos, neg, auto_factor=False):
     '''
     Load images for a double helicity reconstruction
-    INPUT:  pos, neg: images of positive and negative helicity
-            auto_factor: determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5
+    INPUT:  pos, neg: arrays, images of positive and negative helicity
+            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
     OUTPUT: difference hologram and factor as a tuple
     --------
     author: KG 2019
@@ -59,10 +59,10 @@ def load_both(pos, neg, auto_factor=False):
 def load_single(image, topo, helicity, auto_factor=False):
     '''
     Load image for a single helicity reconstruction
-    INPUT:  image: data of the single helicity image
-            topo: topography data
-            helicity: True/False or 1/0 for pos/neg helicity image
-            auto_factor: determine the factor by which the topology is multiplied automatically, if FALSE: factor is set to 0.5
+    INPUT:  image: array, data of the single helicity image
+            topo: array, topography data
+            helicity: boolean, True/False for pos/neg helicity image
+            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
     OUTPUT: difference hologram and factor as a tuple
     --------
     author: KG 2019
@@ -103,8 +103,8 @@ def load_mat(folder, npos):
     '''
     load the reconstruction file from the matlab routine, needed only for the beamtimes, where we reconstructed with MATLAB (04.19, 05.19, 09.19)
     we now also have a complete python script for the reconstruction, so this function is no longer crucially needed
-    INPUT:  folder where the matplab parameter file is stored
-            npos: number of the matlab file
+    INPUT:  folder: string, path to the matplab parameter file
+            npos: int, number of the matlab file
     OUTPUT: center coordinates and beamstop diameter as a tuple
     --------
     author: KG 2019
@@ -158,8 +158,8 @@ def plot_ROI(image, ROI_coord, scale = (0,100), color = 'gray', colorbar = True)
 def remove_cosmic_ray(holo, coordinates):
     """
     Replaces a single pixel by the mean of the 8 nearest neighbors.
-    INPUT:  holo: hologram
-            coordinates: coordinates of the pixel to be replaced in an array or list [x, y]
+    INPUT:  holo: array, hologram
+            coordinates: array, coordinates of the pixel to be replaced in an array or list [x, y]
     OUTPUT: hologram with replaced pixel
     -------
     author: KG 2019
@@ -177,9 +177,9 @@ def remove_cosmic_ray(holo, coordinates):
 def remove_two(holo, x_coord, y_coord):
     """
     Replaces two neighboring pixels by the mean of the nearest neighbors.
-    INPUT:  holo: hologram
-            x_coord: x coordinates of the pixel to be replaced in an array or list [x1, x2] if there are two pixels in x direction or as a single number if the pixels have the same x coordinate
-            y_coord: y coordinates of the pixel (see above)
+    INPUT:  holo: array, hologram
+            x_coord: int or array, x coordinates of the pixel to be replaced in an array or list [x1, x2] if there are two pixels in x direction or as a single number if the pixels have the same x coordinate
+            y_coord: int or array, y coordinates of the pixel (see above)
     OUTPUT: hologram with replaced pixels
     -------
     author: KG 2019
@@ -262,7 +262,7 @@ def eliminateCosmicRays(image,
     Filtered copy of image.
     
     -----
-    author: FB, 2016
+    author: MS/FB, 2016
     '''
     # Don't edit the provided image
     image = image.copy()
@@ -342,7 +342,7 @@ def average_over_n_nearest_pixels_2D(M,n,returnStdDev=False):
     in the input array.
     
     -----
-    author: FB 2016
+    author: MS/FB 2016
     '''
     # To test / visualize the following code, copy and play with this:
     ## Simulate a matrix with x and y dimensions and a 3-vector in
@@ -424,8 +424,8 @@ def integer(n):
 def set_center(image, center):
     '''
     this centering routine shifts the image in a cyclical fashion
-    INPUT:  image: difference hologram
-            center: center coordinates
+    INPUT:  image: array, difference hologram
+            center: array, center coordinates [x, y]
     OUTPUT: centered hologram
     -------
     author: MS 2016, KG 2019
@@ -441,8 +441,8 @@ def set_center(image, center):
 def sub_pixel_centering(reco, dx, dy):
     '''
     Routine for subpixel centering
-    INPUT:  reco :  the reconstructed image
-            dx, dy: floats for the shifting
+    INPUT:  reco :  array, the reconstructed image
+            dx, dy: floats, amount to be shifted
     RETURNS: shifted hologram
     ------
     author: KG, 2020
@@ -462,10 +462,10 @@ def sub_pixel_centering(reco, dx, dy):
 def mask_beamstop(image, bs_size, sigma = 3, center = None):
     '''
     A smoothed circular region of the imput image is set to zero.
-    INPUT:  image is the difference hologram
-            bs_size is diameter of the beamstop
-            sigma is the sigma of the applied gaussian filter, default value is 10
-            center: if the hologram is not centered, you can input the center coordinates for the beamstop mask. Default is None, so the center of the picture is taken.
+    INPUT:  image: array, the difference hologram
+            bs_size: integer, diameter of the beamstop
+            sigma: optional, float, the sigma of the applied gaussian filter (default is 3)
+            center: optional, array, if the hologram is not centered, you can input the center coordinates for the beamstop mask. Default is None, so the center of the picture is taken.
     OUTPUT: hologram multiplied with the beamstop mask
     -------
     author: MS 2016, KG 2019
@@ -505,11 +505,12 @@ def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=Tr
     '''
     Parameters:
     ===========
-    holo : hologram  to be propagated
-    prop_l : propagation distance [m]
-    ccd_dist : CCD - sample distance [m]
-    energy : photon energy [eV] 
-    integer_wl_mult : if true, coerce propagation distance to nearest integermultiple of photon wavelength 
+    holo : array, hologram  to be propagated
+    prop_l : float, propagation distance [m]
+    ccd_dist : optional, float, CCD - sample distance [m] (default is 18e-2 [m])
+    energy : optional, float, photon energy [eV] (default is 779.5 [eV])
+    integer_wl_mult : optional, boolean, if true, coerce propagation distance to nearest integermultiple of photon wavelength (default is True)
+    px_size = optional, float, physical size of one pixel of the CCD [m] (default is 20e-6 [m])
     
     Returns:
     ========
@@ -537,7 +538,7 @@ def propagate_realspace(image, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_
     '''
     Parameters:
     ===========
-    holo : real space image to be propagated
+    image : array, real space image to be propagated
     prop_l : propagation distance [m]
     ccd_dist : CCD - sample distance [m]
     energy : photon energy [eV] 
@@ -635,12 +636,13 @@ def save_config(image_numbers, center_coordinates, bs_size, prop_dist, phase_shi
     '''
     save the reconstruction parameters in a config file with configparser, replaced in 2020 with saving as hdf file
     INPUT:
-        image_numbers is a 1D list with either one or two values: [single_hel_number] or [pos, neg]
-        center_coordinates is a 1D array with two values: [xcenter, ycenter]
-        roi_coordinates is a 1D array with four calues: [xstart, xstop, ystart, ystop]
-        bs_size is a float indicating the diameter of the beamstop
-        prop_dist is a float indicating the propagation length
-        conf_filename is the name and path under which the configfile should be saved
+        image_numbers: 1D list, with either one or two values: [single_hel_number] or [pos, neg]
+        center_coordinates: 1D array, with two values: [xcenter, ycenter]
+        bs_size: float, the diameter of the beamstop
+        prop_dist: float, the propagation length
+        phase_shift: float, phase shift 
+        roi_coordinates: 1D array, with four values: [xstart, xstop, ystart, ystop]
+        conf_filename: string, the name and path under which the configfile should be saved
         
     -------
     author: KG 2019
@@ -676,12 +678,12 @@ def save_config_matlab(image_numbers, center_coordinates,  prop_dist, phase_shif
     '''
     save the reconstruction parameters in a config file with configparser, not in use anymore
     PARAMETERS:
-        image_numbers is a 1D list with either one or two values: [single_hel_number] or [pos, neg]
-        center_coordinates is a 1D array with two values: [xcenter, ycenter]
-        prop_dist is a float indicating the propagation length
-        phase_shift is a float indicating the global phase shift
-        roi_coordinates is a 1D array with four calues: [xstart, xstop, ystart, ystop]
-        conf_filename is the name and path under which the configfile should be saved
+        image_numbers: 1D list, with either one or two values: [single_hel_number] or [pos, neg]
+        center_coordinates: 1D array, with two values: [xcenter, ycenter]
+        prop_dist: float, the propagation length
+        phase_shift: float, the phase shift
+        roi_coordinates: 1D array, with four values: [xstart, xstop, ystart, ystop]
+        conf_filename: string, the name and path under which the configfile should be saved
     -------
     author: KG 2019
         '''
@@ -713,8 +715,8 @@ def save_config_matlab(image_numbers, center_coordinates,  prop_dist, phase_shif
 def read_hdf(fname):
     '''
     reads the latest saved parameters in the hdf file
-    INPUT:  fname: path and filename of the hdf file
-    OUtPUT: image numbers, topography numbers, factor, center coordinates, beamstop diameter, propagation distance, phase and ROI coordinates in that order as a tuple
+    INPUT:  fname: str, path and filename of the hdf file
+    OUTPUT: image numbers, topography numbers, factor, center coordinates, beamstop diameter, propagation distance, phase and ROI coordinates in that order as a tuple
     -------
     author: KG 2020
     '''
@@ -738,7 +740,7 @@ def read_hdf(fname):
 
 def read_config(conf_filename):
     '''read data from config file created with configparser, replaced by hdf files
-    INPUT:  conf_filenam: the name and path under which the configfile is saved
+    INPUT:  conf_filename: str, the name and path under which the configfile is saved
     OUTPUT: image numbers, center coordinates, beamstop diameter, propagation distance, phase and ROI coordinates in that order as a tuple
     -------
     author: KG 2019
@@ -780,7 +782,7 @@ def read_config(conf_filename):
 def read_config_matlab(conf_filename):
     '''
     read data from config file created with configparser, replaced by hdf files
-    INPUT:  conf_filenam: the name and path under which the configfile is saved
+    INPUT:  conf_filename: str, the name and path under which the configfile is saved
     OUTPUT: image numbers, center coordinates, propagation distance, phase and ROI coordinates in that order as a tuple
     -------
     author: KG 2019
