@@ -31,20 +31,24 @@ import cupy as cp
 def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
        plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,real_object=False,average_img=10):
     '''
-    Iterative phase retrieval function
-    INPUT:  diffract=far field data
-            mask=support
-            mode=algorithm type
-            Nit= number of step
-            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
-            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
-            real_object=possibility of only real image
-            plot_every= how often you plot data
-            average_img=number of image to be averaged
-        
-    OUTPUT: retrieved image
-            diffraction pattern (THE OUTPUT IS ACTUALLY WRONG BECAUSE IT'S
-    ----
+    Iterative phase retrieval function, without GPU acceleration
+    INPUT:  diffract: far field hologram data
+            mask: support matrix, defines where the retrieved reconstruction is supposed to be zeroa
+            mode: string defining the algorithm to use (ER, RAAR, HIO, CHIO, OSS, HPR)
+            Nit: number of steps
+            beta_zero: starting value of beta
+            beta_mode: way to evolve the beta parameter (const, arctan, exp, linear_to_beta_zero, linear_to_1)
+            Phase: initial image to start from, if Phase=0 it's going to be a random start
+            ROI: region of interest of the obj.hole, useful only for real-time imaging during the phase retrieval process
+            BS: [centery,centerx,radius] of BeamStopper
+            bsmask: binary matrix used to mask camera artifacts. where it is 1, the pixel will be left floating during the phase retrieval process
+            real_object: Boolean, if True the image is considered to be real
+            plot_every: how often you plot data during the retrieval process
+            average_img: number of images with a local minum Error on the diffraction pattern that will be summed to get the final image
+            
+            
+    OUTPUT: retrieved image, retrieved diffraction pattern
+    --------
     author: RB 2020
     '''
 
@@ -201,28 +205,36 @@ def PhaseRtrv(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', 
     guess==np.sum(Best_guess,axis=0)/average_img
 
     #return final image
-    return (np.fft.ifftshift(np.fft.fft2((guess)) + guess*BSmask), guess)
+    return np.fft.ifftshift(np.fft.fft2(guess)), guess
     
 
 def PhaseRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,seed=False,
-       plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,real_object=False,average_img=10):
+       plot_every=20,BS=[0,0,0],bsmask=0,real_object=False,average_img=10):
+    
     '''
-    Iterative phase retrieval function optimized to run on GPU
-    INPUT:  diffract=far field data
-            mask=support
-            mode=algorithm type
-            Nit= number of step
-            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
-            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
-            real_object=possibility of only real image
-            plot_every= how often you plot data
-            average_img=number of image to be averaged
-        
-    OUTPUT: retrieved image, diffraction pattern, error list on magnitude, error list on support
-    ----
+    Iterative phase retrieval function, with GPU acceleration
+    INPUT:  diffract: far field hologram data
+            mask: support matrix, defines where the retrieved reconstruction is supposed to be zeroa
+            mode: string defining the algorithm to use (ER, RAAR, HIO, CHIO, OSS, HPR)
+            Nit: number of steps
+            beta_zero: starting value of beta
+            beta_mode: way to evolve the beta parameter (const, arctan, exp, linear_to_beta_zero, linear_to_1)
+            Phase: initial image to start from, if Phase=0 it's going to be a random start
+            seed: Boolean, if True, the starting value will be random but always using the same seed for more reproducible retrieved images
+            plot_every: how often you plot data during the retrieval process
+            BS: [centery,centerx,radius] of BeamStopper
+            bsmask: binary matrix used to mask camera artifacts. where it is 1, the pixel will be left floating during the phase retrieval process
+            real_object: Boolean, if True the image is considered to be real
+            average_img: number of images with a local minum Error on the diffraction pattern that will be summed to get the final image
+            
+            
+    OUTPUT: retrieved image, retrieved diffraction pattern, list of Error on far-field data, list of Errors on support
+    
+     --------
     author: RB 2020
     '''
 
+ 
     #set parameters and BSmask
     (l,n) = diffract.shape
     alpha=None
@@ -350,9 +362,7 @@ def PhaseRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='cons
     guess=cp.asnumpy(guess_cp)
 
     #return final image
-    return (np.fft.ifftshift(np.fft.fft2(guess)), guess, Error_diffr_list, Error_supp_list)
-
-#return np.fft.ifftshift(np.fft.fft2((1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask)), (1-BSmask) *diffract* np.exp(1j * np.angle(guess)) + guess*BSmask, #Error_diffr_list, Error_supp_list
+    return np.fft.ifftshift(np.fft.fft2(guess)), guess, Error_diffr_list, Error_supp_list
 
 
 ###################################
@@ -360,13 +370,15 @@ def PhaseRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='cons
 def dinamic_support(im_p, im_n, mask, ROI, N_std=4):
     '''
     Confronts two retrieved images and reduces the support size by eliminating pixels where the angle of their ratio is N std deviations greater than the average
-    INPUT:  im_p: array, first retrieved image
-            im_n: array, second retrieved image
-            mask: array
-            ROI: array, corrdinates for your FOV [x1, x2, y1, y2]
-            N_std: optional, int, maximal deviation from the average of the angle of their ratio (default is 4)
-    OUPUT: new mask
-    ----
+    used for shrink-wrap
+    INPUT:  im_p,im_n: positive/negative helicity image
+            mask: support inside which the image are considered (basically a tight mask on the obj. and ref. hole) 
+            ROI: region of interest, used for image
+            N_std: standard deviations of the ratio between angles above which the pixel is eliminated
+            
+    OUTPUT: new_mask: new updated support, tighter than mask
+    
+    --------
     author: RB 2020
     '''
     
@@ -406,25 +418,27 @@ def dinamic_support(im_p, im_n, mask, ROI, N_std=4):
 
 def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const', Phase=0,
        plot_every=20,ROI=[None,None,None,None],BS=[0,0,0],bsmask=0,average_img=10):
-    '''Iterative Amplitude retrieval function
-
-    Given a diffraction pattern and a support (mask) including the auto- and cross- correlation terms
-    (can be done by FFT the support mask used for CDI and applying a threshold, or directly by finding it from the FTH reconstruction)
-    this function apply an iterative algorith with two constraint: the FTH reconstruction must be zero outside of the support, and the diffraction pattern must be real and positive.
-    Outputs the filtered diffraction pattern, which should in theory have less camera artifacts
-        
-    INPUT:  diffract=far field data
-            mask=support
-            mode=algorithm type
-            Nit= number of step
-            beta_zero,beta_mode = evolution of beta parameter, Phase=initial image to start from,
-            ROI=region of interest (Obj.Hole), plotted during retrieval, BS=(centery,centerx,radius) of BeamStopper,
-            real_object=possibility of only real image
-            plot_every= how often you plot data
-            average_img=number of image to be averaged
-        
-    OUTPUT: retrieved image, Error_diffr_list, Error_supp_list
-    ----
+    
+    '''
+    Iterative phase retrieval function, with GPU acceleration, for clearing the hologram from camera artifacts using "Amplitude rerieval"
+    Makes sure that the FTH reconstruction is nonzero only inside the given "mask" support, and that its diffraction pattern stays real and positive.
+    INPUT:  diffract: far field hologram data
+            mask: support matrix, defines where the retrieved reconstruction is supposed to be zero. Must include all obj.holes and reference holes reconstruction. can be obtained by doing the |FFT(mask)|**2 of the mask used for normal phase retrieval, and applying a threshold
+            mode: string defining the algorithm to use (ER, RAAR, HIO)
+            Nit: number of steps
+            beta_zero: starting value of beta
+            beta_mode: way to evolve the beta parameter (const, arctan, exp, linear_to_beta_zero, linear_to_1)
+            Phase: initial image to start from, if Phase=0 it's going to be a random start
+            plot_every: how often you plot data during the retrieval process
+            ROI: region of interest of the obj.hole, useful only for real-time imaging during the phase retrieval process
+            BS: [centery,centerx,radius] of BeamStopper
+            bsmask: binary matrix used to mask camera artifacts. where it is 1, the pixel will be left floating during the phase retrieval process
+            average_img: number of images with a local minum Error on the diffraction pattern that will be summed to get the final image
+            
+            
+    OUTPUT: retrieved image, list of Error on far-field data, list of Errors on support
+    
+     --------
     author: RB 2020
     '''
     
@@ -476,7 +490,8 @@ def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const
     FTHrec=fth.reconstruct(diffract)
     #shift everything to the corner
     BSmask=np.fft.fftshift(BSmask)
-    guess=np.fft.fftshift(guess)+
+    guess=np.fft.fftshift(guess)
+    #mask=np.fft.fftshift(mask)
     diffract=np.fft.fftshift(diffract)
     
     
@@ -512,9 +527,26 @@ def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const
             inv=FTHrec_cp*mask_cp
         elif mode=='HIOs':
             inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv)
+        #elif mode=='HIO':
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv) + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(-cp.real(inv),0)
         elif mode=='RAAR':
             inv = FTHrec_cp + (1-mask_cp)*(beta*prev - 2*beta*FTHrec_cp)
             + (beta*prev -2*beta*FTHrec_cp)* mask_cp* cp.where(-2*FTHrec_cp+prev>0,1,0)
+            #cp.heaviside(cp.real(-2*inv+prev),0)
+        #elif mode=='OSS':
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv) + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(-cp.real(inv),0)
+        #    #smooth region outside support for smoothing
+        #    alpha= l - (l-1/l)* cp.floor(s/Nit*10)/10
+        #    smoothed= cp.fft.ifft2( W(inv.shape[0],inv.shape[1],alpha) * cp.fft.fft2(inv))          
+        #    inv= mask_cp*inv + (1-mask_cp)*smoothed
+        #elif mode=='CHIO':
+        #    alpha=0.4
+        #    inv= (prev-beta*inv) + mask_cp*cp.heaviside(cp.real(inv-alpha*prev),1)*(-prev+(beta+1)*inv)
+        #    + cp.heaviside(cp.real(-inv+alpha*prev),1)*cp.heaviside(cp.real(inv),1)* ((beta-(1-alpha)/alpha)*inv)
+        #elif mode=='HPR':
+        #    alpha=0.4
+        #    inv =  inv + (1-mask_cp)*(prev - (beta+1) * inv)
+        #    + mask_cp*(prev - (beta+1) * inv)*cp.heaviside(cp.real(prev-(beta-3)*inv),0)
 
                          
         prev=inv.copy()
@@ -540,7 +572,11 @@ def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const
             clear_output(wait=True)
             
             Error_supp = Error_support(cp.abs(guess_cp),mask_cp)
+            #Error_supp_list.append(Error_supp)
             
+            #ax1.scatter(s,Error_diffr,marker='o',color='red')
+            #ax1bis.scatter(s,Error_supp,marker='x',color='blue')
+            #fig.tight_layout()  # otherwise the right y-label is slightly clipped
             guessplot=np.fft.fftshift(cp.asnumpy(guess_cp))
             
             im=(np.fft.ifft2((guessplot)))
@@ -551,24 +587,39 @@ def AmplRtrv_GPU(diffract,mask,mode='ER',Nit=500,beta_zero=0.5, beta_mode='const
             im_imag=np.imag(im)
             
             ax[0].imshow((guessplot), cmap='coolwarm')
+            #ax3.imshow(im_abs, cmap='binary')
 
-            real_detail=im_real
-            imag_detail=im_imag
+            real_detail=im_real#[cpROI[2]:cpROI[3],cpROI[0]:cpROI[1]]
+            imag_detail=im_imag#[cpROI[2]:cpROI[3],cpROI[0]:cpROI[1]]
             ax[1].imshow(real_detail,vmin=mir,vmax=mar)
             ax[2].imshow(imag_detail, cmap='hsv',vmin=-cp.pi,vmax=cp.pi)
 
             display(plt.gcf())
         
             print(cp.sum(guess_cp),'#',s,'   beta=',beta,'   Error_diffr=',Error_diffr, '   Error_supp=',Error_supp)
-   
+
+    #sum best guess images
+    #guess_cp==cp.sum(Best_guess,axis=0)/average_img
+    
     guess=cp.asnumpy(guess_cp)
 
-    return (np.fft.ifftshift(guess) , Error_diffr_list, Error_supp_list)
+    #return final image
+    return np.fft.ifftshift(guess) , Error_diffr_list, Error_supp_list
 
 #############################################################
 #    FILTER FOR OSS
 #############################################################
 def W(npx,npy,alpha=0.1):
+    '''
+    Simple generator of a gaussian, used for filtering in OSS
+    INPUT:  npx,npy: number of pixels on the image
+            alpha: width of the gaussian 
+            
+    OUTPUT: gaussian matrix
+    
+    --------
+    author: RB 2020
+    '''
     Y,X = np.meshgrid(range(npy),range(npx))
     k=(np.sqrt((X-npx//2)**2+(Y-npy//2)**2))
     return np.fft.fftshift(np.exp(-0.5*(k/alpha)**2))
@@ -577,6 +628,15 @@ def W(npx,npy,alpha=0.1):
 #    ERROR FUNCTIONS
 #############################################################
 def Error_diffract(guess, diffract):
+    '''
+    Error on the diffraction attern of retrieved data. 
+    INPUT:  guess, diffract: retrieved and experimental diffraction patterns 
+            
+    OUTPUT: Error between the two
+    
+    --------
+    author: RB 2020
+    '''
     Num=(diffract-guess)**2
     Den=diffract**2
     Error = Num.sum()/Den.sum()
@@ -584,6 +644,16 @@ def Error_diffract(guess, diffract):
     return Error
 
 def Error_support(prev,mask):
+    '''
+    Error on the support of retrieved data. 
+    INPUT:  prev: retrieved image
+            mask: support mask
+            
+    OUTPUT: Error on the support, how much prev is outside of "mask"
+    
+    --------
+    author: RB 2020
+    '''
     Num=prev*(1-mask)**2
     Den=prev**2
     Error=Num.sum()/Den.sum()
@@ -594,6 +664,22 @@ def Error_support(prev,mask):
 #    function for setting PR parameters using widgets
 #############################################################
 def widgParam(BS):
+    '''
+    Widget function to quickly choose the parameters to use in the phase retrieval reconstruction 
+    INPUT:  BS: [centery,centerx,radius] of BeamStopper
+            
+    OUTPUT: Nit: number of steps
+            mode: string defining the algorithm to use (ER, RAAR, HIO, CHIO, OSS, HPR)
+            beta_mode: way to evolve the beta parameter (const, arctan, exp, linear_to_beta_zero, linear_to_1)
+            real_object: Boolean, if True the image is considered to be real
+            plot_every: how often you plot data during the retrieval process
+            BS: [centery,centerx,radius] of BeamStopper
+            average: number of images you will average on after phase retrieval. Each image will be taken from those on the local minima of Error_diffr
+            beta_zero: starting value of beta
+    
+    --------
+    author: RB 2020
+    '''
     def f(N_step,algorithm,beta,beta_func,only_real,BeamStop,N_average_images,plot_how_often):
         global BS,plot_every,mode,beta_mode,real_object,average,Nit,beta_zero
         if BeamStop==False:
@@ -623,7 +709,7 @@ def widgParam(BS):
 
 def save_retrieval(fname, nr_nobs, nr_sbs, nr_lbs, retrieved_holo_p, retrieved_holo_n, prop_dist, phase, roi, comment = ''):
     '''
-    Save everything in a hdf file. If the file already exists, append the reconstruction and parameters to that file (key is always reco%increasing number)
+    Save everything in a hdf file. If the file already exists, append the retrieval and parameters to that file (key is always reco%increasing number)
     INPUT:  fname: path and name of the hdf file
             nr_nobs, nr_sbs, nr_lbs: entry numbers for the data without, with small, with large beamstop
             retrieved_holo_p, retrieved_holo_n: retrieved holograms for positive, negative helicity
@@ -654,7 +740,7 @@ def save_retrieval(fname, nr_nobs, nr_sbs, nr_lbs, retrieved_holo_p, retrieved_h
 
 def save_stitching(fname, nr_nobs, nr_sbs, nr_lbs, c_nobs, c_bs, r_bs1, r_bs2, fac1, sig1, shift1, fac2, sig2, shift2, stitched_holo_p, stitched_holo_n, recon, prop_dist, phase, roi, comment = ''):
     '''
-    Save everything in a hdf file. If the file already exists, append the reconstruction and parameters to that file (key is always reco%increasing number)
+    Save everything in a hdf file. If the file already exists, append the stitching and parameters to that file (key is always reco%increasing number)
     INPUT:  fname: path and name of the hdf file
             nr_nobs, nr_sbs, nr_lbs: entry numbers for the data without, with small, with large beamstop
             c_nobs, c_bs: center for the images without, with beamstop
@@ -711,7 +797,7 @@ def save_reco_dict_to_hdf(fname, reco_dict):
     grp : str
         Name of the new data group.
     -------
-    author: MS 2020
+    author: dscran 2020
     '''
     with h5py.File(fname, mode='a') as f:
         i = 0
@@ -786,12 +872,19 @@ def read_stitching(fname):
 #    Focusing with propagation
 #############################################################
 
-def propagate(im_p, im_n, ROI,mask=1, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, energy=779.5, px_size=20e-6):
+def propagate(im_p, im_n, ROI, mask=1, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, energy=779.5, px_size=20e-6):
     '''
     starts the quest for the right propagation distance and global phase shift.
     reconstructs separate helicities. Plots their ratio.
-    Input:  the phase retrieved images as returned by PhaseRtrv
-            coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+    Input:  im_p,im_n: the phase retrieved images as returned by PhaseRtrv
+            ROI: coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            mask: the support inside wich the field is nonzero
+            phase: starting value for the angle
+            prop_dist: starting value for propagation distance
+            scale: scale of the image,
+            ccd_dist: camera-sample distance
+            energy: energy of light used
+            px_size: size of pixels used
     Returns the two sliders. When you are finished, you can save the positions of the sliders.
     -------
     author: RB 2020
@@ -854,8 +947,12 @@ def propagate(im_p, im_n, ROI,mask=1, phase=0, prop_dist=0, scale=(0,100), ccd_d
 def inv_gnomonic(CCD, z=20e-2, center_y=10, center_x=10, px_size=20e-6):
     '''
     Projection on the Ewald sphere for close CCD images.
-    Input: far-field diffraction image, z: distance,
-    center_y, center_x are added to the side, so the image has to be cropped later
+    Input:  CCD: far-field diffraction image
+            z: camera-sample distance,
+            center_y,center_x: pixels in excess we want to add to the borders by zero-padding so that the projected image has existing pixels to use
+            px_size: size of CCD pixels
+    Output: Output: projected image
+    
     -------
     author: RB 2020
     '''
@@ -946,15 +1043,18 @@ def inv_gnomonic(CCD, z=20e-2, center_y=10, center_x=10, px_size=20e-6):
     return Output
 
 
-#############################################################
-#    Fourier Ring Correlation
-#############################################################
-
 def FRC(im1,im2,width_bin):
     '''
-    implements Fourier Ring Correlation. Can select the width of the bins in pixels. outputs arrays of the numerator and denominator
-    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)'''
+    implements Fourier Ring Correlation. (https://www.nature.com/articles/s41467-019-11024-z)
+    Input:  im1,im2: two diffraction patterns with different sources of noise. Can also use same image twice, sampling only odd/even pixels
+            width_bin: width of circles we will use to have our histogram
+            
+    Output: sum_num: array of all numerators value of correlation hystogram
+            sum_den: array of all denominators value of correlation hystogram
     
+    -------
+    author: RB 2020
+    '''
     shape=im1.shape
     Num_bins=shape[0]//(2*width_bin)
     sum_num=np.zeros(Num_bins)
