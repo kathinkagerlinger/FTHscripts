@@ -220,28 +220,7 @@ def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None
             holo, factor = fth.load_single(pos, topo, True, auto_factor=auto_factor)
     else:
         holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
-    
-    # if helpos==None:
-    #     print("Double Helicity Reconstruction")
-    #     pos = maxi.get_mte(fname_im, entry_nr[0])
-    #     neg = maxi.get_mte(fname_im, entry_nr[1])
-    #     holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
-    # else:
-    #     print("Single Helicity Reconstruction")
-    #     if topo_nr is None:
-    #         if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
-    #             print("Please put in the numbers for the topography.")
-    #             return
-    #         else:
-    #             pos = maxi.get_mte(fname_im, nref[0])
-    #             neg = maxi.get_mte(fname_im, nref[1])
-    #     else:
-    #         pos = maxi.get_mte(fname_im, topo_nr[0])
-    #         neg = maxi.get_mte(fname_im, topo_nr[1])
-# 
-    #     image = maxi.get_mte(fname_im, entry_nr)
-    #     holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
-    
+
     print("Start reconstructing the image using the center and beamstop mask from the Matlab reconstruction.")
     holoN = fth.set_center(holo, center)
 
