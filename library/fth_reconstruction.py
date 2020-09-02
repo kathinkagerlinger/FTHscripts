@@ -501,16 +501,14 @@ def mask_beamstop_matlab(image, mask, sigma=8):
 
 ###########################################################################################
 
-def propagate(holo, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=True, px_size=20e-6):
+def propagate(holo, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}, integer_wl_multiple=True):
     '''
     Parameters:
     ===========
     holo : array, hologram  to be propagated
     prop_l : float, propagation distance [m]
-    ccd_dist : optional, float, CCD - sample distance [m] (default is 18e-2 [m])
-    energy : optional, float, photon energy [eV] (default is 779.5 [eV])
+    experimental_setup : optional, dictionary, {CCD - sample distance [m] (default is 18e-2 [m]), photon energy [eV] (default is 779.5 [eV]), physical size of one pixel of the CCD [m] (default is 20e-6 [m])}
     integer_wl_mult : optional, boolean, if true, coerce propagation distance to nearest integermultiple of photon wavelength (default is True)
-    px_size = optional, float, physical size of one pixel of the CCD [m] (default is 20e-6 [m])
     
     Returns:
     ========

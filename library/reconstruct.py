@@ -121,7 +121,7 @@ def set_roi(holo, scale = (1,99)):
     return (ROIx1, ROIx2, ROIy1, ROIy2, button)
 
 
-def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, energy=779.5, px_size=20e-6):
+def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), experimental_setup = {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}):
     '''
     starts the quest for the right propagation distance and global phase shift.
     Input:  the shifted and masked hologram as returned from recon_allNew
@@ -134,7 +134,7 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, en
     style = {'description_width': 'initial'}
     fig, axs = plt.subplots(1,2)
     def p(x,y):
-        image = fth.reconstruct(fth.propagate(holo, x*1e-6, ccd_dist = ccd_dist, energy = energy, px_size = px_size)*np.exp(1j*y))
+        image = fth.reconstruct(fth.propagate(holo, x*1e-6, experimental_setup = experimental_setup)*np.exp(1j*y))
         mir, mar = np.percentile(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
         mii, mai = np.percentile(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
 
@@ -182,7 +182,7 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, en
 
 ###########################################################################################
 
-def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None, auto_factor=False):
+def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None, auto_factor=False, experimental_setup = {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}):
     '''
     This function reconstructs a hologram using the latest parameters of the given hdf file.
     INPUT:  fname_im: name of the h5 file where the images are stored
@@ -233,7 +233,7 @@ def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None
         
     if old_prop:
         print("Using propagation distance from config file.")
-        holoN = fth.propagate(holoN, prop_dist*1e-6)
+        holoN = fth.propagate(holoN, prop_dist*1e-6, experimental_setup = experimental_setup)
         print("Now determine the global phase shift by executing phase_shift.")
     else: 
         print("Please use the propagation function to propagate.")

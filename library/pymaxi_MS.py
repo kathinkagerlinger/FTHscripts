@@ -56,9 +56,9 @@ def diode_scan(fname, entry_number, motor):
     -----
     author: KG 2020
     '''
-    f = h5py.File(fname, 'r')
-    diode = f[f'entry{entry_number:d}/measurement/diodeA'][()]
-    motor_val = f[f'entry{entry_number:d}/measurement/{motor:s}'][()]
+    with h5py.File(fname, 'r') as f:
+        diode = f[f'entry{entry_number:d}/measurement/diodeA'][()]
+        motor_val = f[f'entry{entry_number:d}/measurement/{motor:s}'][()]
     return (diode, motor_val)
 
 
