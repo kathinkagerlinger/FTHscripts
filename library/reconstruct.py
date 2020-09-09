@@ -466,7 +466,7 @@ def high_pass_filtering(holo, amp = .5, sig = 60):
 
     return(slider_amp, slider_sig)
 
-def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), ccd_dist=18e-2, energy=779.5, px_size=20e-6):
+def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}):
     '''
     Applies a sub-pixel centering, propagation distance and global phase shift.
     INPUT:  holo: array, the shifted and masked hologram
@@ -485,7 +485,7 @@ def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), ccd_dist
     style = {'description_width': 'initial'}
     fig, axs = plt.subplots(1,2)
     def p(x, y, fx, fy):
-        image = fth.reconstruct(fth.propagate(holo, x*1e-6)*np.exp(1j*y))
+        image = fth.reconstruct(fth.propagate(holo, x*1e-6, experimental_setup)*np.exp(1j*y))
         simage = fth.sub_pixel_centering(image, fx, fy)
 
         ax1 = axs[0].imshow(np.real(simage[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')

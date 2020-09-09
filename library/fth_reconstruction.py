@@ -517,7 +517,7 @@ def propagate(holo, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 7
     ========
     author: MS 2016
     '''
-    wl = cst.h * cst.c / (energy * cst.e)
+    wl = cst.h * cst.c / (experimental_setup['energy'] * cst.e)
     if integer_wl_multiple:
         prop_l = np.round(prop_l / wl) * wl
 
@@ -526,13 +526,13 @@ def propagate(holo, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 7
     q, p = np.mgrid[0:l1, 0:l2]  #grid over CCD pixel coordinates   
     pq_grid = (q - q0) ** 2 + (p - p0) ** 2 #grid over CCD pixel coordinates, (0,0) is the centre position
     dist_wl = 2 * prop_l * np.pi / wl
-    phase = (dist_wl * np.sqrt(1 - (px_size / ccd_dist) ** 2 * pq_grid))
+    phase = (dist_wl * np.sqrt(1 - (experimental_setup['px_size']/ experimental_setup['ccd_dist']) ** 2 * pq_grid))
     holo = np.exp(1j * phase) * holo
 
     print ('Propagation distance: %.2fum' % (prop_l*1e6)) 
     return holo
 
-def propagate_realspace(image, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_multiple=True, px_size=20e-6):
+def propagate_realspace(image, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}, integer_wl_multiple=True):
     '''
     Parameters:
     ===========
@@ -550,7 +550,7 @@ def propagate_realspace(image, prop_l, ccd_dist=18e-2, energy=779.5, integer_wl_
     author: KG 2020
     '''
     holo = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(image)))
-    holo = propagate(holo, prop_l, ccd_dist = ccd_dist, energy = energy, integer_wl_multiple = integer_wl_multiple, px_size = px_size) 
+    holo = propagate(holo, prop_l, ccd_dist = experimental_setup['ccd_dist'], energy = experimental_setup['energy'], integer_wl_multiple = integer_wl_multiple, px_size = experimental_setup['px_size']) 
     return reconstruct(holo)
 
 ###########################################################################################
