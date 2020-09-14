@@ -19,8 +19,10 @@ from IPython.display import display
 import fth_reconstruction as fth
 import cameras as cam
 import pymaxi as maxi
-
-
+#for the fine tuning
+from TVminimizer import TVMinimizer
+from scipy.fft import fftshift
+from skimage.draw import circle
 
 
 ###########################################################################################
@@ -474,9 +476,7 @@ def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), experime
             phase: optional, float, starting value for the phase slider (default is 0)
             prop_dist: optional, float, starting value for the propagation slider (default is 0)
             scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
-            ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
-            energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
-            px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            experimental_setup: optional, dictionary, includes the values for CCD-sample distance, photon energy and pixel size (default is {'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6})
     OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
             When you are finished, you can save the positions of the sliders.
     -------
@@ -511,6 +511,40 @@ def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), experime
     widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
 
     return (slider_prop, slider_phase, slider_dx, slider_dy)
+
+
+def tv_minimize(reco, bs_diam, holo_shape, iterations = 40000, step_size = 1e-3):
+    '''
+    Applies the TV minimization written by Erik Malm. This should produce a more even reconstruction.
+    INPUT:  reco: array, the reconstructed hologram, cropped to desired FOV
+            bs_diam: int, diameter of the full sized beamstop
+            holo_shape: tuple of int, shape of your recorded hologram
+            iterations: optional, int, number of iterations done by the TV minimizer (default is 40000)
+            step_size: optional, float, step_size of the TV minimizer, good values are between 1e-3 and 2e-2 (default is 1e-3)
+    OUPUT:  optimized reconstruction
+    -------
+    author: KG 2020
+    '''
+    x0, y0 = holo_shape
+    mask = np.ones((x0, y0))
+    yy, xx = circle(y0//2, x0//2, bs_diam/2)
+    mask[yy, xx] = 0
+
+    dx, dy = reco.shape
+    if dx != dy:
+        print('Your reconstruction FOV is not quadratic, will adjust now!')
+        if dx > dy:
+            ds = dy
+        else:
+            ds = dx
+    else:
+        ds = dx
+    if ds%2 != 0:
+        print('Your reconstruction FOV is not an even number. Will correct this now. The algorithm does not work well with uneven numbers. Because a lot of fourier transformations are used in the process, the smaller the largest prime factor of the small side is, the better.')
+        ds -= 1
+    tvm = TVMinimizer(fftshift(reco[:ds, :ds]), fftshift(mask))
+    tvm.solve_tv(iterations=iterations, zero_border = False, step_size = step_size)
+    return fftshift(tvm.u_tv)
 
 ###########################################################################################
 

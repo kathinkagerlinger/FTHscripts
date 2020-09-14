@@ -87,6 +87,20 @@ def get_mte(fname, entry_number):
     with h5py.File(fname, 'r') as f:
         return f[f'entry{entry_number:d}/measurement/mte'][()][0]
 
+def get_mte_plus_info(fname, entry_number, info_name='helicity'):
+    '''
+    Function to get data of a the camera of a specific entry.
+    Also, gets one parameter (helicity, current, etc.) as a second output.
+    INPUT: fname: string, path and name of the hdf file
+    entry_number: integer, number of the entry you want to check
+    info_name: string, name of the key you want to read. You can check it with measurement_info()
+    OUTPUT: array of the image data, value of key
+    -----
+    author: RB 2020
+    '''
+    with h5py.File(fname, 'r') as f:
+        return f[f'entry{entry_number:d}/measurement/mte'][()][0], f[f'entry{entry_number:d}/measurement/{info_name:s}'][()]
+
 ###############################################################################
 #       Beamshape
 
