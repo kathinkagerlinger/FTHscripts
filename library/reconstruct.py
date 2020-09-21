@@ -571,14 +571,7 @@ def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi
     author: KG 2020
     '''
     image_numbers = np.array(image_numbers)
-    
-    if image_numbers.size == 1:
-        im = image_numbers
-    elif np.isnan(image_numbers[0]):
-        im = image_numbers[1]
-    else:
-        im = image_numbers[0]
-    
+
     if topo is None:
         topo = [np.nan, np.nan]
     
@@ -597,7 +590,7 @@ def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi
     
     fth.save_reco_dict_to_hdf(fname, reco_dict)
     return
-
+    
 
 def save_parameters_config(holo, center, prop_dist, phase, roi, folder, image_numbers, bs_diam, propagate=False):
     '''

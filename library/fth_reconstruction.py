@@ -604,7 +604,7 @@ def highpass(data, amplitude, sigma):
 
 ###########################################################################################
 
-def save_reco_dict_to_hdf(fname, reco_dict):
+def save_reco_dict_to_hdf(fname, reco_dict, key = 'reco'):
     '''Saves a flat dictionary to a new hdf group in given file.
     
     Parameters
@@ -613,6 +613,8 @@ def save_reco_dict_to_hdf(fname, reco_dict):
         hdf file name
     reco_dict : dict
         Flat dictionary
+    key : str, optional
+        key name of the HDF entry, default is 'reco'
     
     Returns
     -------
@@ -623,11 +625,11 @@ def save_reco_dict_to_hdf(fname, reco_dict):
     '''
     with h5py.File(fname, mode='a') as f:
         i = 0
-        while f'reco{i:02d}' in f:
+        while f'{key}{i:02d}' in f:
             i += 1
         for k, v in reco_dict.items():
-            f[f'reco{i:02d}/{k}'] = v
-    return f'reco{i:02d}'
+            f[f'{key}{i:02d}/{k}'] = v
+    return f'{key}{i:02d}'
     
 
 def save_config(image_numbers, center_coordinates, bs_size, prop_dist, phase_shift, roi_coordinates, conf_filename):
