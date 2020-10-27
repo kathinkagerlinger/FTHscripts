@@ -1128,9 +1128,18 @@ def createHDF5(dict0,filename,f=None):
             print("---")
     return f
 
+##############################
+# Fourier Ring Correlation
+#############################
 def FRC_GPU(im1,im2,width_bin):
     '''implements Fourier Ring Correlation. 
-    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)'''
+    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)
+    
+    INPUT: 2 images in real space
+            width of the bin, integer
+    output: FRC istogram array
+    
+    RB 2020'''
     
     im1_cp=cp.asarray(im1)
     im2_cp=cp.asarray(im2)
@@ -1169,7 +1178,9 @@ def FRC_1image_GPU(im1,width_bin, output='average'):
     INPUT: 1 image in real space
             width of the bin, integer
             string to decide the output (optional)
-    output: FRC istogram average, or array containing separate hystograms 01even-even-odd-odd, 23even-odd-odd-even, 20even-odd-even-even, 13odd-odd-odd-even'''
+    output: FRC istogram average, or array containing separate hystograms 01even-even-odd-odd, 23even-odd-odd-even, 20even-odd-even-even, 13odd-odd-odd-even
+    
+    RB 2020'''
     
     shape=im1.shape
     Num_bins=shape[0]//(2*2*width_bin)
@@ -1190,3 +1201,4 @@ def FRC_1image_GPU(im1,width_bin, output='average'):
         return FRC_data
     else:
         return FRC_array
+
