@@ -1043,33 +1043,150 @@ def inv_gnomonic(CCD, z=20e-2, center_y=10, center_x=10, px_size=20e-6):
     return Output
 
 
-def FRC(im1,im2,width_bin):
-    '''
-    implements Fourier Ring Correlation. (https://www.nature.com/articles/s41467-019-11024-z)
-    Input:  im1,im2: two diffraction patterns with different sources of noise. Can also use same image twice, sampling only odd/even pixels
-            width_bin: width of circles we will use to have our histogram
-            
-    Output: sum_num: array of all numerators value of correlation hystogram
-            sum_den: array of all denominators value of correlation hystogram
+#############################################################
+#    function for saving Hdf5 file
+#############################################################
+
+"""
+functions to create and read hdf5 files.
+groups will be converted to dictionaries, containing the data
+supports nested dictionaries.
+
+to create hdf file:
+    create_hdf5(dict0,filename) where dict0 is the dictionary containing the data and filename the file name
+to read hdf file:
+    data=cread_hdf5(filename) data will be a dictionary containing all information in "filename.hdf5"
+riccardo 2020
+
+"""
+
+def read_hdf5(filename):
     
-    -------
-    author: RB 2020
-    '''
+    f = h5py.File(filename+'.hdf5', 'r')
+    dict_output = readHDF5(f)
+    
+    return dict_output
+    
+def readHDF5(f, dict_output={}):
+    
+    for i in f.keys():
+        
+    
+        if type(f[i]) == h5py._hl.group.Group:
+            print("### ",i)
+            print("---")
+            dict_output[i]=readHDF5(f[i],dict_output={})
+            print("---")
+        
+        else:
+            dict_output[i]=f[i][()]
+            print("•",i, "                  ", type(dict_output[i]))
+        
+        
+    return dict_output
+    
+def create_hdf5(dict0,filename):
+    
+    f=createHDF5(dict0,filename)
+    f.close()
+
+
+def createHDF5(dict0,filename,f=None):
+    '''creates HDF5 data structures strating from a dictionary. supports nested dictionaries'''
+    print(dict0.keys())
+    
+#    try:
+#        f = h5py.File(filename+ ".hdf5", "w")
+#        print("ok")
+#    except OSError:
+#        print("could not read")
+    
+    if f==None:
+         f = h5py.File(filename+ ".hdf5", "w")
+    
+    
+    if type(dict0) == dict:
+        
+        for i in dict0.keys():
+            
+            print("create group %s"%i)
+            print("---")
+            print(i,",",type(dict0[i]))
+
+            if type(dict0[i]) == dict:
+                print('dict')
+                grp=(f.create_group(i))
+                createHDF5(dict0[i],filename,f=grp)
+                
+            elif type(dict0[i]) == np.ndarray:
+                dset=(f.create_dataset(i, data=dict0[i]))
+                print("dataset created")
+                
+            elif (dict0[i] != None):
+                dset=(f.create_dataset(i, data=dict0[i]))
+                print("dataset created")
+            print("---")
+    return f
+
+def FRC_GPU(im1,im2,width_bin):
+    '''implements Fourier Ring Correlation. 
+    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)'''
+    
+    im1_cp=cp.asarray(im1)
+    im2_cp=cp.asarray(im2)
+    
     shape=im1.shape
     Num_bins=shape[0]//(2*width_bin)
-    sum_num=np.zeros(Num_bins)
-    sum_den=np.zeros(Num_bins)
+    
+    sum_num=cp.zeros(Num_bins)
+    sum_den=cp.zeros(Num_bins)
     center = np.array([shape[0]//2, shape[1]//2])
     
+    FT1=cp.fft.fftshift(cp.fft.fft2(cp.fft.fftshift(im1)))
+    FT2=cp.fft.fftshift(cp.fft.fft2(cp.fft.fftshift(im2)))
+    
     for i in range(Num_bins):
-        annulus = np.zeros(shape)
+        annulus = cp.zeros(shape)
         yy_outer, xx_outer = circle(center[1], center[0], (i+1)*width_bin)
         yy_inner, xx_inner = circle(center[1], center[0], i*width_bin)
         annulus[yy_outer,xx_outer]=1
         annulus[yy_inner,xx_inner]=0
 
         #a for cycle going through the various rings, summing up the terms for the denominator and calculating each term in the ring
-        sum_num[i]=np.sum( im1* np.conj(im2) * annulus )#np.sum( im1[np.nonzero(annulus)] * np.conj(im2[np.nonzero(annulus)]) )
-        sum_den[i]=np.sqrt( np.sum(np.abs(im1)**2* annulus) * np.sum(np.abs(im2)**2* annulus) )
+        sum_num[i]=cp.sum( FT1* cp.conj(FT2) * annulus )
+        sum_den[i]=cp.sqrt( cp.sum(cp.abs(FT1)**2* annulus) * cp.sum(cp.abs(FT2)**2* annulus) )
         
-    return sum_num,sum_den
+    FRC_array=sum_num/sum_den
+    FRC_array_np=cp.asnumpy(FRC_array)
+    
+    return FRC_array_np
+
+
+def FRC_1image_GPU(im1,width_bin, output='average'):
+    '''implements Fourier Ring Correlation. 
+    RB June 2020 (https://www.nature.com/articles/s41467-019-11024-z)
+    
+    INPUT: 1 image in real space
+            width of the bin, integer
+            string to decide the output (optional)
+    output: FRC istogram average, or array containing separate hystograms 01even-even-odd-odd, 23even-odd-odd-even, 20even-odd-even-even, 13odd-odd-odd-even'''
+    
+    shape=im1.shape
+    Num_bins=shape[0]//(2*2*width_bin)
+    FRC_array=np.zeros((4,Num_bins))
+    
+    #eveneven, oddodd, evenodd, oddeven
+    im=[im1[::2, ::2],im1[1::2, 1::2],im1[::2, 1::2],im1[1::2, ::2]]
+    FT1st=[0,2,2,1]
+    FT2nd=[1,3,0,3]
+    
+    for j in range(0,4):
+        
+        FRC_array[j,:]=FRC_GPU(im[FT1st[j]],im[FT2nd[j]],width_bin)
+      
+    FRC_data=np.sum(FRC_array,axis=0)/4
+    
+    if output=='average':
+        return FRC_data
+    else:
+        return FRC_array
