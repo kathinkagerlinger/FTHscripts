@@ -5,7 +5,7 @@ Python class for TV minimization of a reconstructed image
 @author: Erik Malm, Lund University
 """
 
-from scipy.fft import fft2, ifft2, fftshift
+from numpy.fft import fft2, ifft2, fftshift
 import numpy as np
 from numpy import gradient
 from skimage.transform import resize

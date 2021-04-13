@@ -19,10 +19,13 @@ from IPython.display import display
 import fth_reconstruction as fth
 import cameras as cam
 import pymaxi as maxi
-#for the fine tuning
+
 from TVminimizer import TVMinimizer
-from scipy.fft import fftshift
+from numpy.fft import fftshift
 from skimage.draw import circle
+
+import scipy.special as spec
+
 
 
 ###########################################################################################
@@ -137,13 +140,13 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), experimental_setup
     fig, axs = plt.subplots(1,2)
     def p(x,y):
         image = fth.reconstruct(fth.propagate(holo, x*1e-6, experimental_setup = experimental_setup)*np.exp(1j*y))
-        mir, mar = np.percentile(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
-        mii, mai = np.percentile(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
+        mir, mar = np.percentile(np.real(image[ROI]), scale)
+        mii, mai = np.percentile(np.imag(image[ROI]), scale)
 
-        ax1 = axs[0].imshow(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mir, vmax = mar)
+        ax1 = axs[0].imshow(np.real(image[ROI]), cmap='gray', vmin = mir, vmax = mar)
         #fig.colorbar(ax1, ax=axs[0], fraction=0.046, pad=0.04)
         axs[0].set_title("Real Part")
-        ax2 = axs[1].imshow(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mii, vmax = mai)
+        ax2 = axs[1].imshow(np.imag(image[ROI]), cmap='gray', vmin = mii, vmax = mai)
         #fig.colorbar(ax2, ax=axs[1], fraction=0.046, pad=0.04)
         axs[1].set_title("Imaginary Part")
         fig.tight_layout()
@@ -205,7 +208,7 @@ def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None
     '''
 
     #Load the parameters from the hdf file
-    _, nref, _, center, bs_diam, prop_dist, phase, roi = fth.read_hdf(fname_param)
+    _, nref, _, center, bs_diam, prop_dist, phase, roi, dx,dy = fth.read_hdf(fname_param)
 
     #Load the images (spe or greateyes; single or double helicity)
     if pos is None:
@@ -213,118 +216,43 @@ def fromParameters(pos, neg, fname_param, new_bs=False, old_prop=True, topo=None
             print('Please provide topology!')
             return
         else:
-            holo, factor = fth.load_single(neg, topo, False, auto_factor=auto_factor)
+            pos, neg, intercept, slope = fth.load_single(neg, topo, False, auto_factor=auto_factor)
+
+            
     elif neg is None:
         if topo is None:
             print('Please provide topology!')
             return
         else:
-            holo, factor = fth.load_single(pos, topo, True, auto_factor=auto_factor)
+            pos, neg, intercept, slope = fth.load_single(pos, topo, True, auto_factor=auto_factor)
     else:
-        holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
+        pos, neg, intercept, slope = fth.load_both(pos, neg, auto_factor=auto_factor)
 
     print("Start reconstructing the image using the center and beamstop mask from the Matlab reconstruction.")
-    holoN = fth.set_center(holo, center)
+    posN = fth.set_center(pos, center)
+    negN = fth.set_center(neg, center)
 
     if not new_bs:
         print("Using beamstop diameter %i from config file and a sigma of 10."%bs_diam)
-        holoN = fth.mask_beamstop(holoN, bs_diam, sigma=10)
+        posN = fth.mask_beamstop(posN, bs_diam, sigma=10)
+        negN = fth.mask_beamstop(negN, bs_diam, sigma=10)
     else:
         print("Please adapt the beamstop using the beamstop function and then propagate.")
-        return(holoN, factor, center, bs_diam, roi, prop_dist, phase)
+        return(posN, negN, factor, center, bs_diam, roi, prop_dist, phase)
         
     if old_prop:
         print("Using propagation distance from config file.")
-        holoN = fth.propagate(holoN, prop_dist*1e-6, experimental_setup = experimental_setup)
+        posN = fth.propagate(posN, prop_dist*1e-6, experimental_setup = experimental_setup)
+        negN = fth.propagate(negN, prop_dist*1e-6, experimental_setup = experimental_setup)
         print("Now determine the global phase shift by executing phase_shift.")
     else: 
         print("Please use the propagation function to propagate.")
 
-    return(holoN, factor, center, bs_diam, roi, prop_dist, phase)
+    return(posN, negN, intercept, slope, center, bs_diam, roi, prop_dist, phase, dx, dy)
 
 
 
-def fromConfig(image_folder, image_numbers, folder_config, number_config, new_bs=False, old_prop=True, topo_nr=None, helpos=None, auto_factor=False, size=[2052,2046], spe_prefix=None):
-    '''
-    old function that uses the config file, replaced by funtion FromParameters with hdf file
-    opens the image files in image_numbers (either single helicity or double helicity)
-    if a spe_prefix is given, it opens spe files, otherwise it opens greateyes files.
-    opens the config file for the center, beamstop, the ROI and the propagation etc.
-
-    shifts the center and masks the beamstop
-    returns the reconstruction parameters as well as the hologram that was corrected as inidcated (with and without bs mask, propagation)
-    -------
-    author: KG 2019
-    '''
-
-    #Load the config file
-    nref, center, bs_diam, prop_dist, phase, roi = fth.read_config(folder_config + '%i_config.ini'%number_config)
-
-    #Load the images (spe or greateyes; single or double helicity)
-    if spe_prefix is None: #greateyes
-        if helpos==None:
-            print("Double Helicity Reconstruction")
-            pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers[0], size=size)
-            neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers[1], size=size)
-            holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
-        else:
-            print("Single Helicity Reconstruction")
-            if topo_nr is None:
-                if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
-                    print("Please put in the numbers for the topography.")
-                    return
-                else:
-                    pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%nref[0], size=size)
-                    neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%nref[1], size=size)
-            else:
-                pos = cam.load_greateyes(image_folder + 'holo_%04d.dat'%topo_nr[0], size=size)
-                neg = cam.load_greateyes(image_folder + 'holo_%04d.dat'%topo_nr[1], size=size)
-    
-            image = cam.load_greateyes(image_folder + 'holo_%04d.dat'%image_numbers, size=size)
-            holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
-    else: #spe
-        if helpos==None:
-            print("Double Helicity Reconstruction")
-            pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers[0], return_header=False)
-            neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers[1], return_header=False)
-            holo, factor = fth.load_both(pos, neg, auto_factor=auto_factor)
-        else:
-            print("Single Helicity Reconstruction")
-            if topo_nr is None:
-                if np.logical_or(np.isnan(nref[0]), np.isnan(nref[0])):
-                    print("Please put in the numbers for the topography.")
-                    return
-                else:
-                    pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%n_ref[0], return_header=False)
-                    neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%n_ref[1], return_header=False)
-            else:
-                pos = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%topo_nr[0], return_header=False)
-                neg = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%topo_nr[1], return_header=False)
-    
-            image = cam.load_spe(image_folder + spe_prefix + '%04d.spe'%image_numbers, return_header=False)
-            holo, factor = fth.load_single(image, pos+neg, helpos, auto_factor=auto_factor)
-    
-    print("Start reconstructing the image using the center and beamstop mask from the Matlab reconstruction.")
-    holoN = fth.set_center(holo, center)
-
-    if not new_bs:
-        print("Using beamstop diameter %i from config file and a sigma of 10."%bs_diam)
-        holoN = fth.mask_beamstop(holoN, bs_diam, sigma=10)
-    else:
-        print("Please adapt the beamstop using the beamstop function and then propagate.")
-        return(holoN, center, bs_diam, roi, prop_dist, phase)
-        
-    if old_prop:
-        print("Using propagation distance from config file.")
-        holoN = fth.propagate(holoN, prop_dist*1e-6)
-        print("Now determine the global phase shift by executing phase_shift.")
-    else: 
-        print("Please use the propagation function to propagate.")
-
-    return(holoN, factor, center, bs_diam, roi, prop_dist, phase)
-
-
-def phase_shift(holo, roi, phase=0):
+def phase_shift(pos, neg, roi, phase=0):
     '''
     starts the quest for the global phase shift.
     Input:  the shifted, masked and propagated hologram
@@ -333,13 +261,15 @@ def phase_shift(holo, roi, phase=0):
     -------
     author: KG 2019
     '''
+    holo=pos-neg
+    
     fig, axs = plt.subplots(1,2)
     def p(x):
         image = fth.reconstruct(holo*np.exp(1j*x))
-        ax1 = axs[0].imshow(np.real(image[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
+        ax1 = axs[0].imshow(np.real(image[roi]), cmap='gray')
         #fig.colorbar(ax1, ax=axs[0], fraction=0.046, pad=0.04)
         axs[0].set_title("Real Part")
-        ax2 = axs[1].imshow(np.imag(image[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
+        ax2 = axs[1].imshow(np.imag(image[roi]), cmap='gray')
         #fig.colorbar(ax2, ax=axs[1], fraction=0.046, pad=0.04)
         axs[1].set_title("Imaginary Part")
         fig.tight_layout()
@@ -368,9 +298,10 @@ def phase_shift(holo, roi, phase=0):
 #                               FINE TUNING                                               #
 
 ###########################################################################################
+import scipy.constants as sc
 
 
-def deconvolve(holo, ROI, E0=0, Q=0.1, phi=0.1, scale=(0,100)):
+def deconvolve(holo, ROI, E00=1, Rref0=45, phi=0.1, scale=(0,100), experimental_setup= {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}):
     '''
     starts the quest for the right deconvolution by the ref. hole point spread function
     (https://www.sciencedirect.com/science/article/pii/S030439911930333X?via%3Dihub)
@@ -384,53 +315,108 @@ def deconvolve(holo, ROI, E0=0, Q=0.1, phi=0.1, scale=(0,100)):
     author: RB 2020
     '''
     style = {'description_width': 'initial'}
-    fig, axs = plt.subplots(1,2)
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
 
     npx,npy=holo.shape
     Y,X = np.meshgrid(range(npy),range(npx))
+    
     R=np.sqrt((X-npx/2)**2+(Y-npy/2)**2)
     
-    def p(x,y,phi):
+    h=sc.physical_constants['Planck constant in eV s'][0]
+    l=h*sc.c/experimental_setup["energy"]*1e9
+    q=2*np.pi*experimental_setup["px_size"]/(l*experimental_setup["ccd_dist"])*R
+    
+    def p(E0,Rref,phi):
         #create bessel function
-        J=x*2*spec.j1(R*y*Q)/(R*y*Q)
-        J[(npx//2),npy//2]=x
+        J= 2*E0 * spec.j1(q*Rref)/(q*Rref)
+        J[npx//2,npy//2] = E0
         #Wiener filtering
         J_w=(J**2+phi)/J
         image = fth.reconstruct(holo/J_w)
-        mir, mar = np.percentile(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
-        mii, mai = np.percentile(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), scale)
-
-        ax1 = axs[0].imshow(np.real(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mir, vmax = mar)
+        
+        mi, ma = np.percentile(np.abs(image[ROI]), scale)
+        ax1 = axs[0,0].imshow(np.abs(image[ROI]), cmap='viridis', vmin = mi, vmax = ma)
         #fig.colorbar(ax1, ax=axs[0], fraction=0.046, pad=0.04)
-        axs[0].set_title("Real Part")
-        ax2 = axs[1].imshow(np.imag(image[ROI[2]:ROI[3], ROI[0]:ROI[1]]), cmap='gray', vmin = mii, vmax = mai)
+        axs[0,0].set_title("Abs Part")
+        mi, ma = np.percentile(np.angle(image[ROI]), scale)
+        ax2 = axs[0,1].imshow(np.angle(image[ROI]), cmap='twilight', vmin = mi, vmax = ma)
         #fig.colorbar(ax2, ax=axs[1], fraction=0.046, pad=0.04)
-        axs[1].set_title("Imaginary Part")
+        axs[0,1].set_title("Phase Part")
+        
+        mi, ma = np.percentile(np.real(image[ROI]), scale)
+        ax1 = axs[1,0].imshow(np.real(image[ROI]), cmap='gray', vmin = mi, vmax = ma)
+        #fig.colorbar(ax1, ax=axs[0], fraction=0.046, pad=0.04)
+        axs[1,0].set_title("Real Part")
+        
+        mi, ma = np.percentile(np.imag(image[ROI]), scale)
+        ax2 = axs[1,1].imshow(np.imag(image[ROI]), cmap='gray', vmin = mi, vmax = ma)
+        #fig.colorbar(ax2, ax=axs[1], fraction=0.046, pad=0.04)
+        axs[1,1].set_title("Imaginary Part")
+        
         fig.tight_layout()
-        print('REAL: max=%i, min=%i'%(np.max(np.real(image)), np.min(np.real(image))))
-        print('IMAG: max=%i, min=%i'%(np.max(np.imag(image)), np.min(np.imag(image))))
         return
     
     layout = widgets.Layout(width='90%')
     style = {'description_width': 'initial'}
-    slider_E0 = widgets.FloatSlider(min=0, max=10, step=0.01, value=E0, layout=layout, description='E0', style=style)
-    slider_Q = widgets.FloatSlider(min=0, max=10, step=0.01, value=1, layout=layout, description='Q=pix_size*Rref/(lambda*z)', style=style)
-    slider_phi = widgets.FloatSlider(min=0, max=10, step=0.01, value=phi, layout=layout, description='phi', style=style)
+    slider_E0 = widgets.FloatSlider(min=0, max=500, step=0.001, value=E00, layout=layout, description='E0', style=style)
+    slider_Rref = widgets.FloatSlider(min=0.001, max=200, step=0.001, value=Rref0, layout=layout, description='Rref (nm)', style=style)
+    slider_phi = widgets.FloatSlider(min=0, max=100, step=0.001, value=phi, layout=layout, description='phi', style=style)
     
-    widgets.interact(p, x=slider_E0, y=slider_Q, phi=slider_phi)
+    widgets.interact(p, E0=slider_E0, Rref=slider_Rref, phi=slider_phi)
+    'Q=pix_size*Rref/(lambda*z)'
+    return (slider_E0, slider_Rref, slider_phi)
 
-    #input("Press the <ENTER> key to continue...")
-    button = widgets.Button(description="Finished")
-    display(button)
+def deconvolve_2(holo, deconv_ref, roi, E00=1,phi0=0.1,prop_dist=0,phase=0, scale=(0,100), experimental_setup= {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}):
+    '''
+    starts the quest for the right deconvolution by the ref. hole point spread function
+    (https://www.sciencedirect.com/science/article/pii/S030439911930333X?via%3Dihub)
+    INPUT:  holo: array, the centered and masked hologram
+            deconv_ref: array, the image of the isolated reference hole
+            ROI: array, ROI coordinates for your FOV [x1, x2, y1, y1]
+            E0: optional, float, starting value for the E0 slider (default is 0)
+            phi: optional, float, starting value for the phi slider (default is 0.1)
+    OUTPUT: the three sliders E0, Q, phi. When you are finished, you can save the positions of the sliders.
+    ----
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
     
-    def on_button_clicked(b):
-        slider_E0.close()
-        slider_Q.close()
-        slider_phi.close()
+    def p(E0,phi,x,y):
+        #create holo of deconv
+        J=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(E0*deconv_ref)))
+        #Wiener filtering of deconv point
+        J_w=(J**2+phi)/J
+        #image = fth.reconstruct(holo/J_w)
+        image = fth.reconstruct(fth.propagate(holo/J_w, x*1e-6, experimental_setup)* np.exp(1j*y))
+        print(phi)
+
+        
+        ax1 = axs[0,0].imshow(np.abs(image[roi]))
+        axs[0,0].set_title("Abs")
+        ax2 = axs[0,1].imshow(np.angle(image[roi]), cmap='twilight')
+        axs[0,1].set_title("Phase")
+        
+        ax3 = axs[1,0].imshow(np.real(image[roi]), cmap='gray')
+        axs[1,0].set_title("Real Part")
+        ax4 = axs[1,1].imshow(np.imag(image[roi]), cmap='gray')
+        axs[1,1].set_title("Imaginary Part")
+        fig.tight_layout()
+
         return
-    button.on_click(on_button_clicked)
+    
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_E0 = widgets.FloatSlider(min=0, max=0.1, step=0.00001, value=E00, layout=layout, description='E0', style=style)
+    slider_phi = widgets.FloatSlider(min=0, max=5000, step=0.001, value=phi0, layout=layout, description='phi', style=style)
+    slider_prop = widgets.FloatSlider(min=-10, max=10, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    
+    widgets.interact(p,E0=slider_E0, phi=slider_phi,x=slider_prop, y=slider_phase)
 
-    return (slider_E0, slider_Q, slider_phi, button)
+    return slider_E0,slider_phi,slider_prop,slider_phase
 
 
 def high_pass_filtering(holo, amp = .5, sig = 60):
@@ -468,50 +454,448 @@ def high_pass_filtering(holo, amp = .5, sig = 60):
 
     return(slider_amp, slider_sig)
 
-def sub_pixel_centering(holo, roi, phase=0, prop_dist=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}):
+##################################
+## FOCUSING + CENTERING FUNCTIONS
+###############################
+
+def focus_fast(holo, roi, mask=1, phase=0, prop_dist=0,dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, max_prop_dist=10):
     '''
-    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Applies a sub-pixel centering, propagation distance and global phase shift. This is faster as the image is just the one in the ROI, so much smaller
+    Also plots real,imag the images while you do it. Works only for square ROIs
     INPUT:  holo: array, the shifted and masked hologram
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
             roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
             phase: optional, float, starting value for the phase slider (default is 0)
             prop_dist: optional, float, starting value for the propagation slider (default is 0)
             scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
-            experimental_setup: optional, dictionary, includes the values for CCD-sample distance, photon energy and pixel size (default is {'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6})
+            ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+            energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+            px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            factor: must be the whole holo.shape[0]/holo[roi].shape[0]
     OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
             When you are finished, you can save the positions of the sliders.
     -------
     author: KG 2020
     '''
     style = {'description_width': 'initial'}
-    fig, axs = plt.subplots(1,2)
+    
+    holo_roi = fth.reconstructCDI(fth.reconstruct(holo)[roi])
+    factor=holo.shape[0]/holo_roi.shape[0]
+    print("factor=",factor)
+    
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
     def p(x, y, fx, fy):
-        image = fth.reconstruct(fth.propagate(holo, x*1e-6, experimental_setup)*np.exp(1j*y))
-        simage = fth.sub_pixel_centering(image, fx, fy)
-
-        ax1 = axs[0].imshow(np.real(simage[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
-        axs[0].set_title("Real Part")
-        ax2 = axs[1].imshow(np.imag(simage[roi[2]:roi[3], roi[0]:roi[1]]), cmap='gray')
-        axs[1].set_title("Imaginary Part")
+        
+        image = fth.reconstruct(fth.propagate(holo_roi, x*1e-6*factor, experimental_setup)*np.exp(1j*y))
+        simage = fth.sub_pixel_centering(image, fx/factor, fy/factor)
+        simage_mask=simage[mask==1]
+        
+        mi,ma=np.percentile(np.abs(simage_mask), (0,99.5))
+        ax1 = axs[0,0].imshow(np.abs(simage), vmin=mi, vmax=ma)
+        axs[0,0].set_title("Abs")
+        
+        mi,ma=np.percentile(np.angle(simage_mask), (1,99.5))
+        ax2 = axs[0,1].imshow(np.angle(simage), cmap='twilight', vmin=mi, vmax=ma)
+        axs[0,1].set_title("Phase")
+        
+        mi,ma=np.percentile(np.real(simage_mask), (1,99.5))
+        ax3 = axs[1,0].imshow(np.real(simage), cmap='RdBu', vmin=mi, vmax=ma)
+        axs[1,0].set_title("Real Part")
+        
+        mi,ma=np.percentile(np.imag(simage_mask), (1,99.5))
+        ax4 = axs[1,1].imshow(np.imag(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,1].set_title("Imaginary Part")
         fig.tight_layout()
-        print('REAL: max=%i, min=%i'%(np.max(np.real(simage)), np.min(np.real(simage))))
-        print('IMAG: max=%i, min=%i'%(np.max(np.imag(simage)), np.min(np.imag(simage))))
         return
 
     layout = widgets.Layout(width='90%')
     style = {'description_width': 'initial'}
-    slider_prop = widgets.FloatSlider(min=-10, max=10, step=0.01, value=prop_dist, layout=layout,
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
                                       description='propagation[um]', style=style)
     slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
                                        description='phase shift', style=style)
-    slider_dx = widgets.FloatSlider(min = -2, max = 2, step = 0.1, value = 0, layout = layout,
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
                                        description = 'x shift', style = style)
-    slider_dy = widgets.FloatSlider(min = -2, max = 2, step = 0.1, value = 0, layout = layout,
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
                                        description = 'y shift', style = style)
 
     widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
 
     return (slider_prop, slider_phase, slider_dx, slider_dy)
 
+def focus_1input(holo, roi, mask=1, phase=0, prop_dist=0,dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also plots real,imag images while you do it
+    INPUT:  holo: array, the shifted and masked hologram
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+            energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+            px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: KG 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(2,2, figsize=(12,12))
+    def p(x, y, fx, fy):
+        
+        image = fth.reconstruct(fth.propagate(holo, x*1e-6, experimental_setup)*np.exp(1j*y))
+        simage = (fth.sub_pixel_centering(image, fx, fy))[roi]
+        maskroi=image*0+mask
+        simage_mask=simage[maskroi[roi]==1]
+        
+        mi,ma=np.percentile(np.abs(simage_mask), (0,99.5))
+        ax1 = axs[0,0].imshow(np.abs(simage), vmin=mi, vmax=ma)
+        axs[0,0].set_title("Abs")
+        
+        mi,ma=np.percentile(np.angle(simage_mask), (1,99.5))
+        ax2 = axs[0,1].imshow(np.angle(simage), cmap='twilight', vmin=mi, vmax=ma)
+        axs[0,1].set_title("Phase")
+        
+        mi,ma=np.percentile(np.real(simage_mask), (1,99.5))
+        ax3 = axs[1,0].imshow(np.real(simage), cmap='RdBu', vmin=mi, vmax=ma)
+        axs[1,0].set_title("Real Part")
+        
+        mi,ma=np.percentile(np.imag(simage_mask), (1,99.5))
+        ax4 = axs[1,1].imshow(np.imag(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,1].set_title("Imaginary Part")
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
+
+def focus(pos,neg, roi, mask=1,phase=0, prop_dist=0,dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, operation="-", max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also plots real,image,abs,angle images while you do it
+    INPUT:  pos,neg: array, the shifted and masked holograms
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            experimental_setup: dictionary containing:
+             - ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+             - energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+             - px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            operation: the operation you'll do on those holograms (-,/,+,-/+, load_both)
+            max_prop_dist: maximum value for propagated distances
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
+    def p(x, y, fx, fy):
+        image_p = fth.reconstruct(fth.propagate(pos, x*1e-6, experimental_setup)* np.exp(1j*y))
+        image_n = fth.reconstruct(fth.propagate(neg, x*1e-6, experimental_setup)* np.exp(1j*y))
+        
+        if operation== "-":
+            image= (image_p-image_n)
+        elif operation== "+":
+            image= (image_p+image_n)
+        elif operation=="/":
+            image= (image_p/image_n)* np.exp(1j*y)
+        elif operation=="-/+":
+            image= (image_p-image_n)/(image_p+image_n) * np.exp(1j*y)
+        elif operation=="load_both":
+            image,_=fth.load_both(pos,neg,True)
+            image= fth.reconstruct(fth.propagate(image, x*1e-6, experimental_setup))* np.exp(1j*y)
+            
+        image=np.nan_to_num(image, nan=0, posinf=0, neginf=0)
+        simage = fth.sub_pixel_centering(image, fx, fy)[roi]
+        maskroi=(image*0+mask)[roi]
+        simage_mask=simage[maskroi==1]        
+        
+        
+        mi,ma=np.percentile(np.abs(simage_mask), (0,99.5))
+        ax1 = axs[0,0].imshow(np.abs(simage), vmin=mi, vmax=ma)
+        axs[0,0].set_title("Abs")
+        
+        mi,ma=np.percentile(np.angle(simage_mask), (1,99.5))
+        ax2 = axs[0,1].imshow(np.angle(simage), cmap='twilight', vmin=mi, vmax=ma)
+        axs[0,1].set_title("Phase")
+        
+        mi,ma=np.percentile(np.real(simage_mask), (1,99.5))
+        ax3 = axs[1,0].imshow(np.real(simage), cmap='RdBu', vmin=mi, vmax=ma)
+        axs[1,0].set_title("Real Part")
+        
+        mi,ma=np.percentile(np.imag(simage_mask), (1,99.5))
+        ax4 = axs[1,1].imshow(np.imag(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,1].set_title("Imaginary Part")
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
+
+def focus(pos,neg, roi, mask=1,phase=0, prop_dist=0,dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, operation="-", max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also plots real,image,abs,angle images while you do it
+    INPUT:  pos,neg: array, the shifted and masked holograms
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            experimental_setup: dictionary containing:
+             - ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+             - energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+             - px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            operation: the operation you'll do on those holograms (-,/,+,-/+, load_both)
+            max_prop_dist: maximum value for propagated distances
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
+    def p(x, y, fx, fy):
+        image_p = fth.reconstructCDI(fth.propagate(pos, x*1e-6, experimental_setup)* np.exp(1j*y))
+        image_n = fth.reconstructCDI(fth.propagate(neg, x*1e-6, experimental_setup)* np.exp(1j*y))
+        
+        if operation== "-":
+            image= (image_p-image_n)
+        elif operation== "+":
+            image= (image_p+image_n)
+        elif operation=="/":
+            image= (image_p/image_n)* np.exp(1j*y)
+        elif operation=="-/+":
+            image= (image_p-image_n)/(image_p+image_n) * np.exp(1j*y)
+        elif operation=="load_both":
+            image,_=fth.load_both(pos,neg,True)
+            image= fth.reconstructCDI(fth.propagate(image, x*1e-6, experimental_setup))* np.exp(1j*y)
+            
+        image=np.nan_to_num(image, nan=0, posinf=0, neginf=0)
+        simage = fth.sub_pixel_centering(image, fx, fy)[roi]
+        maskroi=(image*0+mask)[roi]
+        simage_mask=simage[maskroi==1]        
+        
+        
+        mi,ma=np.percentile(np.abs(simage_mask), (0,99.5))
+        ax1 = axs[0,0].imshow(np.abs(simage), vmin=mi, vmax=ma)
+        axs[0,0].set_title("Abs")
+        
+        mi,ma=np.percentile(np.angle(simage_mask), (1,99.5))
+        ax2 = axs[0,1].imshow(np.angle(simage), cmap='twilight', vmin=mi, vmax=ma)
+        axs[0,1].set_title("Phase")
+        
+        mi,ma=np.percentile(np.real(simage_mask), (1,99.5))
+        ax3 = axs[1,0].imshow(np.real(simage), cmap='RdBu', vmin=mi, vmax=ma)
+        axs[1,0].set_title("Real Part")
+        
+        mi,ma=np.percentile(np.imag(simage_mask), (1,99.5))
+        ax4 = axs[1,1].imshow(np.imag(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,1].set_title("Imaginary Part")
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
+
+
+def focus_hyst2d(pos,neg, roi, mask=1,phase=0, prop_dist=0, dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, operation="-", max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also polts a 2d hystogram of the complex values of pixels in real time
+    INPUT:  pos,neg: array, the shifted and masked holograms
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            experimental_setup: dictionary containing:
+             - ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+             - energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+             - px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            operation: the operation you'll do on those holograms (-,/,+,-/+, load_both)
+            max_prop_dist: maximum value for propagated distances
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, ax = plt.subplots(1,1, figsize=(10,10))
+    def p(x, y, fx, fy):
+        
+        image_p = fth.reconstruct(fth.propagate(pos, x*1e-6, experimental_setup)* np.exp(1j*y))
+        image_n = fth.reconstruct(fth.propagate(neg, x*1e-6, experimental_setup)* np.exp(1j*y))
+        
+        if operation== "-":
+            image= (image_p-image_n)
+        elif operation== "+":
+            image= (image_p+image_n) * np.exp(1j*y)
+        elif operation=="/":
+            image= (image_p/image_n) * np.exp(1j*y)
+        elif operation=="-/+":
+            image= (image_p-image_n)/(image_p+image_n) * np.exp(1j*y)
+        elif operation=="load_both":
+            image,_=fth.load_both(pos,neg,True)
+            image= fth.reconstruct(fth.propagate(image, x*1e-6, experimental_setup))* np.exp(1j*y)
+            
+        image=np.nan_to_num(image, nan=0, posinf=0, neginf=0)
+        simage = fth.sub_pixel_centering(image, fx, fy)[roi]
+        maskroi=(image*0+mask)[roi]
+        simage_mask=simage[maskroi==1]   
+        
+        flat=simage.flatten()
+        flat=flat[flat != 0]
+        real=np.real(flat)
+        imag=np.imag(flat)
+        
+        ax.set_title("complex plane")
+        mi,ma=np.percentile(np.abs(simage_mask), (2,95))
+        _ = ax.hist2d(x=real,y=imag, bins=100, cmap="RdBu", range=((-ma,ma),(-ma,ma)))
+         
+
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
+
+def focus_hyst(pos,neg, roi, mask=1,phase=0, prop_dist=0, dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, operation="-", max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also plots hystograms of real, imag, abs, and angle part while you do it
+    INPUT:  pos,neg: array, the shifted and masked holograms
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            experimental_setup: dictionary containing:
+             - ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+             - energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+             - px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            operation: the operation you'll do on those holograms (-,/,+,-/+, load_both)
+            max_prop_dist: maximum value for propagated distances
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, ax = plt.subplots(2,2, figsize=(15,7))
+    def p(x, y, fx, fy):
+        
+        image_p = fth.reconstruct(fth.propagate(pos, x*1e-6, experimental_setup)* np.exp(1j*y))
+        image_n = fth.reconstruct(fth.propagate(neg, x*1e-6, experimental_setup)* np.exp(1j*y))
+        
+        if operation== "-":
+            image= (image_p-image_n)
+        elif operation== "+":
+            image= (image_p+image_n) * np.exp(1j*y)
+        elif operation=="/":
+            image= (image_p/image_n) * np.exp(1j*y)
+        elif operation=="-/+":
+            image= (image_p-image_n)/(image_p+image_n) * np.exp(1j*y)
+        elif operation=="load_both":
+            image,_=fth.load_both(pos,neg,True)
+            image= fth.reconstruct(fth.propagate(image, x*1e-6, experimental_setup))* np.exp(1j*y)
+            
+        image=np.nan_to_num(image, nan=0, posinf=0, neginf=0)
+        simage = fth.sub_pixel_centering(image, fx, fy)
+        simage=(simage*mask)[roi]
+        
+        flat=simage.flatten()
+        flat=flat[flat != 0]
+        
+        real=np.real(flat)
+        imag=np.imag(flat)
+        abs_val=np.abs(flat)
+        angle_val=np.angle(flat)
+        
+        
+        ax[0,0].set_title("abs value")
+        mi,ma=np.percentile(abs_val, (0,99))
+        _ = ax[0,0].hist(abs_val, bins='auto', range=(mi,ma))  # arguments are passed to np.histogram
+        ax[0,1].set_title("phase")
+        mi,ma=np.percentile(angle_val, (1,99))
+        _ = ax[0,1].hist(angle_val, bins='auto', range=(mi,ma))  # arguments are passed to np.histogram        
+        ax[1,0].set_title("real part")
+        mi,ma=np.percentile(real, (1,99))
+        _ = ax[1,0].hist(real, bins='auto', range=(mi,ma))  # arguments are passed to np.histogram        
+        ax[1,1].set_title("imaginary part")
+        mi,ma=np.percentile(imag, (1,99))
+        _ = ax[1,1].hist(imag, bins='auto', range=(mi,ma))  # arguments are passed to np.histogram
+        
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
 
 def tv_minimize(reco, bs_diam, holo_shape, iterations = 40000, step_size = 1e-3):
     '''
@@ -553,7 +937,7 @@ def tv_minimize(reco, bs_diam, holo_shape, iterations = 40000, step_size = 1e-3)
 ###########################################################################################
 
 
-def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi, image_numbers, comment = '', topo = None):
+def save_parameters(fname, recon, intercept, slope , center, bs_diam, prop_dist, phase, dx, dy, roi, image_numbers, comment = '', topo = None):
     '''
     Save everything in a hdf file. If the file already exists, append the reconstruction and parameters to that file (key is always reco%increasing number)
     INPUT:  fname: path and name of the hdf file
@@ -571,7 +955,14 @@ def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi
     author: KG 2020
     '''
     image_numbers = np.array(image_numbers)
-
+    
+    if image_numbers.size == 1:
+        im = image_numbers
+    elif np.isnan(image_numbers[0]):
+        im = image_numbers[1]
+    else:
+        im = image_numbers[0]
+    
     if topo is None:
         topo = [np.nan, np.nan]
     
@@ -579,18 +970,21 @@ def save_parameters(fname, recon, factor, center, bs_diam, prop_dist, phase, roi
         'reconstruction': recon,
         'image numbers': image_numbers,
         'topo numbers': topo,
-        'factor': factor,
+        'intercept': intercept,
+        'slope': slope,
         'center': center,
         'beamstop diameter': bs_diam,
         'ROI coordinates': roi,
         'Propagation distance': prop_dist,
         'phase': phase,
+        'dx':dx,
+        'dy':dy,
         'comment': comment
     }
     
     fth.save_reco_dict_to_hdf(fname, reco_dict)
     return
-    
+
 
 def save_parameters_config(holo, center, prop_dist, phase, roi, folder, image_numbers, bs_diam, propagate=False):
     '''
@@ -618,7 +1012,7 @@ def save_parameters_config(holo, center, prop_dist, phase, roi, folder, image_nu
     else:
         im = image_numbers[0]
 
-    np.save(folder + '%i_recon'%im, recon[roi[2]:roi[3], roi[0]:roi[1]])
+    np.save(folder + '%i_recon'%im, recon[roi])
     
     fth.save_config(image_numbers, center, bs_diam, prop_dist, phase, roi, folder + '%i_config.ini'%im)
     return

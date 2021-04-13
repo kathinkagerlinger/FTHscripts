@@ -21,40 +21,119 @@ import scipy.constants as cst
 
 from skimage.draw import circle
 
+
+from scipy import stats
+
 ###########################################################################################
 
 #                               LOAD DATA                                                 #
 
 ###########################################################################################
 
+'''
+    def load_both(pos, neg, auto_factor=False):
+        ''''''
+        Load images for a double helicity reconstruction
+        INPUT:  pos, neg: arrays, images of positive and negative helicity
+                auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+        OUTPUT: difference hologram and factor as a tuple
+        --------
+        author: KG 2019
+        ''''''
+        size = pos.shape
+        if auto_factor:
+            offset_pos = (np.mean(pos[:10,:10]) + np.mean(pos[-10:,:10]) + np.mean(pos[:10,-10:]) + np.mean(pos[-10:,-10:]))/4
+            offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
+            topo = pos - offset_pos + neg - offset_neg
+            pos = pos - offset_pos
+            factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
+            print('Auto factor = ' + str(factor))
+        else:
+            topo = pos + neg
+            factor = 0.5
+
+        #make sure to return a quadratic image, otherwise the fft will distort the image
+        if size[0]<size[1]:
+            return (pos[:, :size[0]] - factor * topo[:, :size[0]], factor)
+        elif size[0]>size[1]:
+            return (pos[:size[1], :] - factor * topo[:size[1], :], factor)
+        else:
+            return (pos - factor * topo, factor)
+
+    def load_single(image, topo, helicity, auto_factor=False):
+        ''''''
+        Load image for a single helicity reconstruction
+        INPUT:  image: array, data of the single helicity image
+                topo: array, topography data
+                helicity: boolean, True/False for pos/neg helicity image
+                auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+        OUTPUT: difference hologram and factor as a tuple
+        --------
+        author: KG 2019
+        ''''''
+        #load the reference for topology
+        topo = topo.astype(np.int64)
+        #load the single image
+        image = image.astype(np.int64)
+
+        size = image.shape
+
+        if auto_factor:
+            offset_sing = (np.mean(image[:10,:10]) + np.mean(image[-10:,:10]) + np.mean(image[:10,-10:]) + np.mean(image[-10:,-10:]))/4
+            image = image - offset_sing
+            offset_topo = (np.mean(topo[:10,:10]) + np.mean(topo[-10:,:10]) + np.mean(topo[:10,-10:]) + np.mean(topo[-10:,-10:]))/4
+            topo = topo - offset_topo
+            factor = np.sum(np.multiply(image, topo))/np.sum(np.multiply(topo, topo))
+            print('Auto factor = ' + str(factor))
+        else:
+            factor = 0.5
+
+        if helicity:
+            holo = image - factor * topo
+        else:
+            holo = -1 * (image - factor * topo)
+
+        #make sure to return a quadratic image, otherwise the fft will distort the image
+        if size[0]<size[1]:
+            return (holo[:, :size[0]], factor)
+        elif size[0]>size[1]:
+            return (holo[:size[1], :], factor)
+        else:
+            return (holo, factor)
+'''
+    
+
+
 def load_both(pos, neg, auto_factor=False):
     '''
     Load images for a double helicity reconstruction
     INPUT:  pos, neg: arrays, images of positive and negative helicity
-            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
-    OUTPUT: difference hologram and factor as a tuple
+            auto_factor: optional, boolean, determine the factor by which neg is normalized automatically, if FALSE: factor is set to 1  and intercept to 0(defualt is False)
+    OUTPUT: (pos, neg, intercept, slope) as a tuple
     --------
-    author: KG 2019
+    author: RB 2021
     '''
     size = pos.shape
+    
     if auto_factor:
-        offset_pos = (np.mean(pos[:10,:10]) + np.mean(pos[-10:,:10]) + np.mean(pos[:10,-10:]) + np.mean(pos[-10:,-10:]))/4
-        offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
-        topo = pos - offset_pos + neg - offset_neg
-        pos = pos - offset_pos
-        factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
-        print('Auto factor = ' + str(factor))
+        
+        x=(pos).flatten()
+        y=(neg).flatten()
+        res = stats.linregress(x,y)
+        intercept, slope= res.intercept,res.slope
+        print("neg=%0.3f + %0.3f*pos"%(intercept, slope))
+        neg=(neg-intercept)/slope
+
     else:
-        topo = pos + neg
-        factor = 0.5
+        intercept, slope= 0,1
 
     #make sure to return a quadratic image, otherwise the fft will distort the image
     if size[0]<size[1]:
-        return (pos[:, :size[0]] - factor * topo[:, :size[0]], factor)
+        return (pos[:, :size[0]], neg[:, :size[0]], intercept, slope)
     elif size[0]>size[1]:
-        return (pos[:size[1], :] - factor * topo[:size[1], :], factor)
+        return (pos[:size[1], :], neg[:size[1], :], intercept, slope)
     else:
-        return (pos - factor * topo, factor)
+        return (pos, neg, intercept, slope)
 
 def load_single(image, topo, helicity, auto_factor=False):
     '''
@@ -62,10 +141,10 @@ def load_single(image, topo, helicity, auto_factor=False):
     INPUT:  image: array, data of the single helicity image
             topo: array, topography data
             helicity: boolean, True/False for pos/neg helicity image
-            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
-    OUTPUT: difference hologram and factor as a tuple
+            auto_factor: optional, boolean, determine the factor by which neg is normalized automatically, if FALSE: factor is set to 1  and intercept to 0(defualt is False)
+    OUTPUT: (pos, neg, intercept, slope) as a tuple
     --------
-    author: KG 2019
+    author: RB 2021 2019
     '''
     #load the reference for topology
     topo = topo.astype(np.int64)
@@ -73,30 +152,38 @@ def load_single(image, topo, helicity, auto_factor=False):
     image = image.astype(np.int64)
 
     size = image.shape
-
+    
     if auto_factor:
-        offset_sing = (np.mean(image[:10,:10]) + np.mean(image[-10:,:10]) + np.mean(image[:10,-10:]) + np.mean(image[-10:,-10:]))/4
-        image = image - offset_sing
-        offset_topo = (np.mean(topo[:10,:10]) + np.mean(topo[-10:,:10]) + np.mean(topo[:10,-10:]) + np.mean(topo[-10:,-10:]))/4
-        topo = topo - offset_topo
-        factor = np.sum(np.multiply(image, topo))/np.sum(np.multiply(topo, topo))
-        print('Auto factor = ' + str(factor))
+        
+        if helicity:
+            pos=image.copy()
+            x=(pos).flatten()
+            y=(topo-image).flatten()
+            res = stats.linregress(x,y)
+            intercept, slope= res.intercept,res.slope
+            print("neg=%0.3f + %0.3f*pos"%(intercept, slope))
+            neg=((topo-image)-intercept)/slope
+            
+        else:
+            neg=image.copy()
+            x=(topo-image).flatten()
+            y=(neg).flatten()
+            res = stats.linregress(y,x)
+            intercept, slope= res.intercept,res.slope
+            print("pos=%0.3f + %0.3f*pos"%(intercept, slope))
+            pos=((topo-image)-intercept)/slope
+        
     else:
-        factor = 0.5
+        intercept, slope= 0,1
 
-    if helicity:
-        holo = image - factor * topo
-    else:
-        holo = -1 * (image - factor * topo)
 
     #make sure to return a quadratic image, otherwise the fft will distort the image
     if size[0]<size[1]:
-        return (holo[:, :size[0]], factor)
+        return (pos[:, :size[0]] , neg[:, :size[0]] , intercept, slope)
     elif size[0]>size[1]:
-        return (holo[:size[1], :], factor)
+        return (pos[:size[1], :] ,neg[:size[1], :] , intercept, slope)
     else:
-        return (holo, factor)
-
+        return (pos, neg , intercept, slope)
 
 
 def load_mat(folder, npos):
@@ -136,15 +223,15 @@ def plot(image, scale = (2,98), color = 'gray', colorbar = True):
         plt.colorbar(im)
     return (fig, ax)
 
-def plot_ROI(image, ROI_coord, scale = (0,100), color = 'gray', colorbar = True):
+def plot_ROI(image, ROI, scale = (0,100), color = 'gray', colorbar = True):
     '''
     Plot the ROI of the image
     --------
     author: KG 2019
     '''
-    mi, ma = np.percentile(image[ROI_coord[2]:ROI_coord[3], ROI_coord[0]:ROI_coord[1]], scale)
+    mi, ma = np.percentile(image[ROI], scale)
     fig, ax = plt.subplots()
-    ax = plt.imshow(np.real(image[ROI_coord[2]:ROI_coord[3], ROI_coord[0]:ROI_coord[1]]), vmin = mi, vmax = ma, cmap = color)
+    ax = plt.imshow(np.real(image[ROI]), vmin = mi, vmax = ma, cmap = color)
     if colorbar:
         plt.colorbar()
     return
@@ -411,6 +498,15 @@ def reconstruct(image):
     return np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(image)))
 
 
+def reconstructCDI(image):
+    '''
+    Reconstruct the image by fft. must be applied to retrieved images
+    -------
+    author: RB 2020
+    '''
+    return np.fft.ifftshift(np.fft.fft2(np.fft.fftshift(image)))
+
+
 ###########################################################################################
 
 #                               CENTERING                                                 #
@@ -529,7 +625,7 @@ def propagate(holo, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 7
     phase = (dist_wl * np.sqrt(1 - (experimental_setup['px_size']/ experimental_setup['ccd_dist']) ** 2 * pq_grid))
     holo = np.exp(1j * phase) * holo
 
-    print ('Propagation distance: %.2fum' % (prop_l*1e6)) 
+    #print ('Propagation distance: %.2fum' % (prop_l*1e6)) 
     return holo
 
 def propagate_realspace(image, prop_l, experimental_setup = {'ccd_dist': 18e-2, 'energy': 779.5, 'px_size' : 20e-6}, integer_wl_multiple=True):
@@ -550,7 +646,7 @@ def propagate_realspace(image, prop_l, experimental_setup = {'ccd_dist': 18e-2, 
     author: KG 2020
     '''
     holo = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(image)))
-    holo = propagate(holo, prop_l, ccd_dist = experimental_setup['ccd_dist'], energy = experimental_setup['energy'], integer_wl_multiple = integer_wl_multiple, px_size = experimental_setup['px_size']) 
+    holo = propagate(holo, prop_l, experimental_setup=experimental_setup, integer_wl_multiple = integer_wl_multiple) 
     return reconstruct(holo)
 
 ###########################################################################################
@@ -604,7 +700,7 @@ def highpass(data, amplitude, sigma):
 
 ###########################################################################################
 
-def save_reco_dict_to_hdf(fname, reco_dict, key = 'reco'):
+def save_reco_dict_to_hdf(fname, reco_dict):
     '''Saves a flat dictionary to a new hdf group in given file.
     
     Parameters
@@ -613,8 +709,6 @@ def save_reco_dict_to_hdf(fname, reco_dict, key = 'reco'):
         hdf file name
     reco_dict : dict
         Flat dictionary
-    key : str, optional
-        key name of the HDF entry, default is 'reco'
     
     Returns
     -------
@@ -625,11 +719,11 @@ def save_reco_dict_to_hdf(fname, reco_dict, key = 'reco'):
     '''
     with h5py.File(fname, mode='a') as f:
         i = 0
-        while f'{key}{i:02d}' in f:
+        while f'reco{i:02d}' in f:
             i += 1
         for k, v in reco_dict.items():
-            f[f'{key}{i:02d}/{k}'] = v
-    return f'{key}{i:02d}'
+            f[f'reco{i:02d}/{k}'] = v
+    return f'reco{i:02d}'
     
 
 def save_config(image_numbers, center_coordinates, bs_size, prop_dist, phase_shift, roi_coordinates, conf_filename):
@@ -733,9 +827,11 @@ def read_hdf(fname):
     bs_diam = f[f'reco{i:02d}/beamstop diameter'][()]
     prop_dist = f[f'reco{i:02d}/Propagation distance'][()]
     phase = f[f'reco{i:02d}/phase'][()]
+    dx = f[f'reco{i:02d}/dx'][()]
+    dy = f[f'reco{i:02d}/dy'][()]
     roi = f[f'reco{i:02d}/ROI coordinates'][()]
 
-    return (image_numbers, topo_numbers, factor, center, bs_diam, prop_dist, phase, roi)
+    return (image_numbers, topo_numbers, factor, center, bs_diam, prop_dist, phase, roi,dx,dy)
 
 
 def read_config(conf_filename):
