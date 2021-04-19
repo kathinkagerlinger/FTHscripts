@@ -41,9 +41,9 @@ def load_spe(fname, header_only=False, return_header = False):
     """
     with open(fname, 'rb') as fid:
         info = _load_header(fid)
-        Nx = np.int(info['xdim'])
-        Ny = info['ydim']
-        Nf = info['frames']
+        Nx = int(info['xdim'])
+        Ny = int(info['ydim'])
+        Nf = int(info['frames'])
         if return_header:
             if info['SPE_ver'] >= 3:
                 fid.seek(4100 + Nx * Ny * Nf * info['dtype']().nbytes)  # seek beyond image file
@@ -55,7 +55,7 @@ def load_spe(fname, header_only=False, return_header = False):
                 return info
         img = _read_at(fid, 4100, Nx * Ny * Nf, info['dtype'])
         if Nf > 1:
-            img = img.reshape(Nx, Ny, Nf).astype(np.float64)
+            img = img.reshape(Nf, Nx, Ny).astype(np.float64)
         else:
             img = img.reshape(Nx, Ny).astype(np.float64)
         # print("loaded %s (%dx%d pixel, %d frame(s))" % (fname, Nx, Ny, Nf))
