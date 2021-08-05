@@ -278,7 +278,7 @@ def set_center(image, center, fill=0):
     y0, y1 = (dy, None) if dy < 0 else (None, dy)
     im_roll[x0:x1, :] = fill
     im_roll[:, y0:y1] = fill
-    return image_roll
+    return im_roll
 
 def sub_pixel_centering(reco, dx, dy):
     '''
