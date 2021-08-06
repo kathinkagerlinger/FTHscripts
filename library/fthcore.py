@@ -123,7 +123,7 @@ def make_square(image):
     -------
     author: KG 2020
     '''
-    size = image.shape()
+    size = image.shape
     if size[0]<size[1]:
         return image[:, :size[0]]
     elif size[0]>size[1]:
