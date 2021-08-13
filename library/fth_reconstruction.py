@@ -212,7 +212,7 @@ def eliminateCosmicRays(image,
     '''
     Definition of cosmic rays in several steps:
 
-     1) devide the original image in a complete overlay of 
+     1) divide the original image in a complete overlay of 
         (cellsize)x(cellsize) pixel subimages -> set1
 
      2) perform a second devision, where the cells are shifted by 
@@ -282,7 +282,7 @@ def eliminateCosmicRays(image,
         avSet1,stdSet1 = average_over_n_nearest_pixels_2D(
                             image, n, True)
         avSet2,stdSet2 = average_over_n_nearest_pixels_2D(
-                            image[n/2:-n/2,n/2:-n/2], n, True)
+                            image[n//2:-n//2,n//2:-n//2], n, True)
         # Determine the upper and lower limits beyond which a pixel intensity
         # defines a hot pixel, individually for each pixel in image.
         ULSet1 = np.maximum(avSet1 + minDev * stdSet1,
@@ -299,8 +299,8 @@ def eliminateCosmicRays(image,
         LLSet1_large = LLSet1.repeat(n,axis=0).repeat(n,axis=1)
         ULSet2_large = ULSet1_large.copy()
         LLSet2_large = LLSet1_large.copy()
-        ULSet2_large[n/2:nx-n/2,n/2:ny-n/2] = ULSet2.repeat(n,axis=0).repeat(n,axis=1)
-        LLSet2_large[n/2:nx-n/2,n/2:ny-n/2] = LLSet2.repeat(n,axis=0).repeat(n,axis=1)
+        ULSet2_large[n//2:nx-n//2,n//2:ny-n//2] = ULSet2.repeat(n,axis=0).repeat(n,axis=1)
+        LLSet2_large[n//2:nx-n//2,n//2:ny-n//2] = LLSet2.repeat(n,axis=0).repeat(n,axis=1)
 
         UL = np.maximum(ULSet1_large, ULSet2_large)
         LL = np.minimum(LLSet1_large, LLSet2_large)
@@ -309,7 +309,7 @@ def eliminateCosmicRays(image,
         # Replace pixels by the average in set1
         replaceBy = avSet1.repeat(n,axis=0).repeat(n,axis=1)
 
-        image[replace] = replaceBy[replace]
+        image = image.where(np.logical_not(replace),replaceBy)
         numberOfIdentifiedCosmicRays = replace.sum()
         totalNumberOfIdentifiedCosmicRays += numberOfIdentifiedCosmicRays
         numberOfIterations += 1
@@ -377,11 +377,11 @@ def average_over_n_nearest_pixels_2D(M,n,returnStdDev=False):
     ny = max(1,int(np.ceil(M.shape[1]/float(n))))
     # pad M with NaN values to make the dimensions an integer multiple of nx and ny
     # NaN values will be ignored in the averaging
-    shape=M.shape
+    shape = M.shape
     newshape = (int(nx*n),int(ny*n))+shape[2:]
     Mn = np.ones(newshape)*np.NaN
-    Mn[(newshape[0]-shape[0])/2:shape[0]+(newshape[0]-shape[0])/2,
-       (newshape[1]-shape[1])/2:shape[1]+(newshape[1]-shape[1])/2,
+    Mn[(newshape[0]-shape[0])//2:shape[0]+(newshape[0]-shape[0])//2,
+       (newshape[1]-shape[1])//2:shape[1]+(newshape[1]-shape[1])//2,
        ...] = M
     # Subdivide the array Mn in x and y direction.
     s = np.array(np.array_split(np.array(np.array_split(Mn,ny,axis=1)),nx,axis=1))
