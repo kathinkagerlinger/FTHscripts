@@ -20,32 +20,20 @@ from skimage.draw import circle
 
 ###########################################################################################
 
-def load_both(pos, neg, auto_factor=True):
+def load_both(pos, neg,crop=0, auto_factor=False):
     '''
     Load images for a double helicity reconstruction
-    
-    Parameters
-    ----------
-    pos : array
-        positive helicity image
-    neg : array
-        negative helicity image
-    auto_factor: bool, optional
-        determine the factor by which (pos+neg) is multiplied automatically, if False: factor is set to 0.5, default is True
-    
-    Returns
-    -------
-    holo : array
-        quadratic difference hologram
-    factor: scalar
-        factor used for the difference hologram
-    -------
+    INPUT:  pos, neg: arrays, images of positive and negative helicity
+            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+            crop: if you want to not consider the borders for the normalization
+    OUTPUT: difference hologram and factor as a tuple
+    --------
     author: KG 2019
     '''
     size = pos.shape
     if auto_factor:
-        offset_pos = (np.mean(pos[:10,:10]) + np.mean(pos[-10:,:10]) + np.mean(pos[:10,-10:]) + np.mean(pos[-10:,-10:]))/4
-        offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
+        offset_pos = (np.mean(pos[crop:crop+10,crop:crop+10]) + np.mean(pos[-10-crop:-crop,crop:crop+10]) + np.mean(pos[crop:crop+10,-10-crop:-crop]) + np.mean(pos[-10-crop:-crop,-10-crop:-crop]))/4
+        offset_neg = (np.mean(neg[crop:crop+10,crop:crop+10]) + np.mean(neg[-10-crop:-crop,crop:crop+10]) + np.mean(neg[crop:crop+10,-10-crop:-crop]) + np.mean(neg[-10-crop:-crop,-10-crop:-crop]))/4
         topo = pos - offset_pos + neg - offset_neg
         pos = pos - offset_pos
         factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
@@ -53,32 +41,25 @@ def load_both(pos, neg, auto_factor=True):
     else:
         topo = pos + neg
         factor = 0.5
-    
-    holo = pos - factor * topo
-    return (make_square(holo), factor)
 
-def load_single(image, topo, helicity, auto_factor=False):
+    #make sure to return a quadratic image, otherwise the fft will distort the image
+    if size[0]<size[1]:
+        return (pos[:, :size[0]] - factor * topo[:, :size[0]], factor)
+    elif size[0]>size[1]:
+        return (pos[:size[1], :] - factor * topo[:size[1], :], factor)
+    else:
+        return (pos - factor * topo, factor)
+
+def load_single(image, topo, helicity,crop=0, auto_factor=False):
     '''
     Load image for a single helicity reconstruction
-    
-    Parameters
-    ----------
-    image : array
-        data of the single helicity image
-    topo : array
-        topography data (sum of positive and negative helicity reference images)
-    helicity: bool
-        True/False for pos/neg single helicity image
-    auto_factor: bool, optional
-        determine the factor by which (pos+neg) is multiplied automatically, if False: factor is set to 0.5, default is True
-    
-    Returns
-    -------
-    holo : array
-        quadratic difference hologram
-    factor: scalar
-        factor used for the difference hologram
-    -------
+    INPUT:  image: array, data of the single helicity image
+            topo: array, topography data
+            helicity: boolean, True/False for pos/neg helicity image
+            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+            crop: if you want to not consider the borders for the normalization
+    OUTPUT: difference hologram and factor as a tuple
+    --------
     author: KG 2019
     '''
     #load the reference for topology
@@ -89,9 +70,9 @@ def load_single(image, topo, helicity, auto_factor=False):
     size = image.shape
 
     if auto_factor:
-        offset_sing = (np.mean(image[:10,:10]) + np.mean(image[-10:,:10]) + np.mean(image[:10,-10:]) + np.mean(image[-10:,-10:]))/4
+        offset_sing = (np.mean(image[crop:crop+10,crop:crop+10]) + np.mean(image[-10-crop:-crop,crop:crop+10]) + np.mean(image[crop:crop+10,-10-crop:-crop]) + np.mean(image[-10-crop:-crop,-10-crop:-crop]))/4
         image = image - offset_sing
-        offset_topo = (np.mean(topo[:10,:10]) + np.mean(topo[-10:,:10]) + np.mean(topo[:10,-10:]) + np.mean(topo[-10:,-10:]))/4
+        offset_topo = (np.mean(topo[crop:crop+10,crop:crop+10]) + np.mean(topo[-10-crop:-crop,crop:crop+10]) + np.mean(topo[crop:crop+10,-10-crop:-crop]) + np.mean(topo[-10-crop:-crop,-10-crop:-crop]))/4
         topo = topo - offset_topo
         factor = np.sum(np.multiply(image, topo))/np.sum(np.multiply(topo, topo))
         print('Auto factor = ' + str(factor))
@@ -104,7 +85,12 @@ def load_single(image, topo, helicity, auto_factor=False):
         holo = -1 * (image - factor * topo)
 
     #make sure to return a quadratic image, otherwise the fft will distort the image
-    return (make_square(holo), factor)
+    if size[0]<size[1]:
+        return (holo[:, :size[0]], factor)
+    elif size[0]>size[1]:
+        return (holo[:size[1], :], factor)
+    else:
+        return (holo, factor)
 
 
 def make_square(image):

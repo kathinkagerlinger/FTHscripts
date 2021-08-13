@@ -32,6 +32,8 @@ from skimage.draw import circle
 ###########################################################################################
 
 
+
+
 def allNew(image_folder, image_numbers, folder_matlab, matlab_number = None, size=[2052,2046], auto_factor = True, spe_prefix = None):
     '''
     This function reconstructs a hologram using values in a matlab file. This function is currently not used in the reconstruction files.
@@ -175,6 +177,85 @@ def propagate(holo, ROI, phase=0, prop_dist=0, scale=(0,100), experimental_setup
     #button.on_click(flip_phase)
     
     return (slider_prop, slider_phase, button)#, ph_flip_button, ph_flip)
+
+def focus(pos,neg, roi, mask=1,phase=0, prop_dist=0,dx=0, dy=0, scale=(0,100), experimental_setup={'ccd_dist':18e-2, 'energy':779.5, 'px_size':20e-6}, operation="-", max_prop_dist=10):
+    '''
+    Applies a sub-pixel centering, propagation distance and global phase shift.
+    Also plots real,image,abs,angle images while you do it
+    INPUT:  pos,neg: array, the shifted and masked holograms
+            mask: optional array, =1 in the region you want to consider, =0 elsewhere. Limits of the colormaps are going to be chosen in this region
+            roi: array, coordinates of the ROI in the order [Xstart, Xstop, Ystart, Ystop]
+            phase: optional, float, starting value for the phase slider (default is 0)
+            prop_dist: optional, float, starting value for the propagation slider (default is 0)
+            scale: optional, tuple of floats, values for the scaling using percentiles (default is (0, 100))
+            experimental_setup: dictionary containing:
+             - ccd_dist: optional, float, distance between CCD and sample in meter (default is 18e-2 (m))
+             - energy: optional, float, energy of the x-rays in eV (default is 779.5 (eV))
+             - px_size: optional, float, physical size of the CCD pixel in m (default is 20e-6 (m))
+            operation: the operation you'll do on those holograms (-,/,+,-/+, load_both)
+            max_prop_dist: maximum value for propagated distances
+    OUPUT:  sliders for the propagation, phase, subpixel shift distances in x and y
+            When you are finished, you can save the positions of the sliders.
+    -------
+    author: RB 2020
+    '''
+    style = {'description_width': 'initial'}
+    fig, axs = plt.subplots(2,2, figsize=(10,10))
+    def p(x, y, fx, fy):
+        image_p = fth.reconstruct(fth.propagate(pos, x*1e-6, experimental_setup)* np.exp(1j*y))
+        image_n = fth.reconstruct(fth.propagate(neg, x*1e-6, experimental_setup)* np.exp(1j*y))
+        
+        if operation== "-":
+            image= (image_p-image_n)
+        elif operation== "+":
+            image= (image_p+image_n)
+        elif operation=="/":
+            image= (image_p/image_n)* np.exp(1j*y)
+        elif operation=="-/+":
+            image= (image_p-image_n)/(image_p+image_n) * np.exp(1j*y)
+        elif operation=="load_both":
+            image,_=fth.load_both(pos,neg,True)
+            image= fth.reconstruct(fth.propagate(image, x*1e-6, experimental_setup))* np.exp(1j*y)
+            
+        image=np.nan_to_num(image, nan=0, posinf=0, neginf=0)
+        simage = fth.sub_pixel_centering(image, fx, fy)[roi]
+        maskroi=(image*0+mask)[roi]
+        simage_mask=simage[maskroi==1]        
+        
+        
+        mi,ma=np.percentile(np.abs(simage_mask), (0,99.5))
+        ax1 = axs[0,0].imshow(np.abs(simage), vmin=mi, vmax=ma)
+        axs[0,0].set_title("Abs")
+        
+        mi,ma=np.percentile(np.angle(simage_mask), (1,99.5))
+        ax2 = axs[0,1].imshow(np.angle(simage), cmap='twilight', vmin=mi, vmax=ma)
+        axs[0,1].set_title("Phase")
+        
+        mi,ma=np.percentile(np.real(simage_mask), (1,99.5))
+        ax3 = axs[1,0].imshow(np.real(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,0].set_title("Real Part")
+        
+        mi,ma=np.percentile(np.imag(simage_mask), (1,99.5))
+        ax4 = axs[1,1].imshow(np.imag(simage), cmap='gray', vmin=mi, vmax=ma)
+        axs[1,1].set_title("Imaginary Part")
+        fig.tight_layout()
+        return
+
+    layout = widgets.Layout(width='90%')
+    style = {'description_width': 'initial'}
+    slider_prop = widgets.FloatSlider(min=-max_prop_dist, max=max_prop_dist, step=0.01, value=prop_dist, layout=layout,
+                                      description='propagation[um]', style=style)
+    slider_phase = widgets.FloatSlider(min=-np.pi, max=np.pi, step=0.001, value=phase, layout=layout,
+                                       description='phase shift', style=style)
+    slider_dx = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dx, layout = layout,
+                                       description = 'x shift', style = style)
+    slider_dy = widgets.FloatSlider(min = -4, max = 4, step = 0.01, value = dy, layout = layout,
+                                       description = 'y shift', style = style)
+
+    widgets.interact(p, x=slider_prop, y=slider_phase, fx = slider_dx, fy = slider_dy)
+
+    return (slider_prop, slider_phase, slider_dx, slider_dy)
+
 
 
 

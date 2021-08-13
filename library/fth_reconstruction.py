@@ -27,19 +27,20 @@ from skimage.draw import circle
 
 ###########################################################################################
 
-def load_both(pos, neg, auto_factor=False):
+def load_both(pos, neg,crop=0, auto_factor=False):
     '''
     Load images for a double helicity reconstruction
     INPUT:  pos, neg: arrays, images of positive and negative helicity
             auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+            crop: if you want to not consider the borders for the normalization
     OUTPUT: difference hologram and factor as a tuple
     --------
     author: KG 2019
     '''
     size = pos.shape
     if auto_factor:
-        offset_pos = (np.mean(pos[:10,:10]) + np.mean(pos[-10:,:10]) + np.mean(pos[:10,-10:]) + np.mean(pos[-10:,-10:]))/4
-        offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
+        offset_pos = (np.mean(pos[crop:crop+10,crop:crop+10]) + np.mean(pos[-10-crop:-crop,crop:crop+10]) + np.mean(pos[crop:crop+10,-10-crop:-crop]) + np.mean(pos[-10-crop:-crop,-10-crop:-crop]))/4
+        offset_neg = (np.mean(neg[crop:crop+10,crop:crop+10]) + np.mean(neg[-10-crop:-crop,crop:crop+10]) + np.mean(neg[crop:crop+10,-10-crop:-crop]) + np.mean(neg[-10-crop:-crop,-10-crop:-crop]))/4
         topo = pos - offset_pos + neg - offset_neg
         pos = pos - offset_pos
         factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
@@ -56,13 +57,14 @@ def load_both(pos, neg, auto_factor=False):
     else:
         return (pos - factor * topo, factor)
 
-def load_single(image, topo, helicity, auto_factor=False):
+def load_single(image, topo, helicity,crop=0, auto_factor=False):
     '''
     Load image for a single helicity reconstruction
     INPUT:  image: array, data of the single helicity image
             topo: array, topography data
             helicity: boolean, True/False for pos/neg helicity image
             auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+            crop: if you want to not consider the borders for the normalization
     OUTPUT: difference hologram and factor as a tuple
     --------
     author: KG 2019
@@ -75,9 +77,9 @@ def load_single(image, topo, helicity, auto_factor=False):
     size = image.shape
 
     if auto_factor:
-        offset_sing = (np.mean(image[:10,:10]) + np.mean(image[-10:,:10]) + np.mean(image[:10,-10:]) + np.mean(image[-10:,-10:]))/4
+        offset_sing = (np.mean(image[crop:crop+10,crop:crop+10]) + np.mean(image[-10-crop:-crop,:crop+10]) + np.mean(image[crop:crop+10,-10-crop:-crop]) + np.mean(image[-10-crop:-crop,-10-crop:-crop]))/4
         image = image - offset_sing
-        offset_topo = (np.mean(topo[:10,:10]) + np.mean(topo[-10:,:10]) + np.mean(topo[:10,-10:]) + np.mean(topo[-10:,-10:]))/4
+        offset_topo = (np.mean(topo[crop:crop+10,crop:crop+10]) + np.mean(topo[-10-crop:-crop,crop:crop+10]) + np.mean(topo[crop:crop+10,-10-crop:-crop]) + np.mean(topo[-10-crop:-crop,-10-crop:-crop]))/4
         topo = topo - offset_topo
         factor = np.sum(np.multiply(image, topo))/np.sum(np.multiply(topo, topo))
         print('Auto factor = ' + str(factor))
