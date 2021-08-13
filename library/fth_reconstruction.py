@@ -56,6 +56,45 @@ def load_both(pos, neg,crop=0, auto_factor=False):
         return (pos[:size[1], :] - factor * topo[:size[1], :], factor)
     else:
         return (pos - factor * topo, factor)
+    
+def load_both_RB(pos, neg,crop=0, auto_factor=True):
+    '''
+    Load images for a double helicity reconstruction
+    INPUT:  pos, neg: arrays, images of positive and negative helicity
+            crop: decide whether you want to ignore the margin of the image when computing the factor
+            auto_factor: optional, boolean, determine the factor by which neg is multiplied automatically, if FALSE: factor is set to 0.5 (defualt is False)
+    OUTPUT: pos,neg with factor and offset correction, factor
+    --------
+    author: RB2021
+    '''
+    size = pos.shape
+    if auto_factor:
+        if crop==0:
+            offset_pos = (np.mean(pos[:10,:10]) + np.mean(pos[-10:,:10]) + np.mean(pos[:10,-10:]) + np.mean(pos[-10:,-10:]))/4
+            offset_neg = (np.mean(neg[:10,:10]) + np.mean(neg[-10:,:10]) + np.mean(neg[:10,-10:]) + np.mean(neg[-10:,-10:]))/4
+        else:
+            offset_pos = (np.mean(pos[crop:crop+10,crop:crop+10]) + np.mean(pos[-10-crop:-crop,crop:10+crop]) + np.mean(pos[crop:10+crop,-10-crop:-crop]) + np.mean(pos[-10-crop:-crop,-10-crop:-crop]))/4
+            offset_neg = (np.mean(neg[crop:crop+10,crop:crop+10]) + np.mean(neg[-10-crop:-crop,crop:10+crop]) + np.mean(neg[crop:10+crop,-10-crop:-crop]) + np.mean(neg[-10-crop:-crop,-10-crop:-crop]))/4
+            
+        pos = pos - offset_pos
+        neg = neg - offset_neg
+        topo = pos+neg
+        if crop==0:
+            factor = np.sum(np.multiply(pos,topo))/np.sum(np.multiply(topo, topo))
+        else:
+            factor = np.sum(np.multiply(pos[crop:-crop,crop:-crop],topo[crop:-crop,crop:-crop]))/np.sum(np.multiply(topo[crop:-crop,crop:-crop], topo[crop:-crop,crop:-crop]))
+    else:
+        topo = pos + neg
+        factor = 0.5
+    print('Auto factor = ' + str(factor))
+
+    #make sure to return a quadratic image, otherwise the fft will distort the image
+    if size[0]<size[1]:
+        return (pos[:, :size[0]], factor * topo[:, :size[0]], factor)
+    elif size[0]>size[1]:
+        return (pos[:size[1], :], factor * topo[:size[1], :], factor)
+    else:
+        return (pos, factor/(1-factor)*neg, factor)
 
 def load_single(image, topo, helicity,crop=0, auto_factor=False):
     '''
